@@ -4,6 +4,7 @@ import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:markdown/markdown.dart' as md;
 
 import 'markdown_preprocessor.dart';
+import 'markdown_render_keys.dart';
 
 const _latexTag = 'latex';
 const _inlineMathScaleFactor = 1.12;
@@ -84,6 +85,7 @@ class LatexNode extends SpanNode {
 
     return WidgetSpan(
       child: Container(
+        key: blockLatexKey,
         width: double.infinity,
         alignment: Alignment.center,
         margin: const EdgeInsets.symmetric(vertical: 16),

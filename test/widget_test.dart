@@ -279,4 +279,41 @@ void main() {
 
     expect(mathWidget.textScaleFactor, greaterThan(1.0));
   });
+
+  testWidgets('MarkdownViewer preserves bullets for formula-only list items', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final storageService = await StorageService.init();
+
+    const markdown = r'''
+- $e^x = 1 + x + rac{x^2}{2!}$
+- $rac{1}{1-x} = 1 + x + x^2 + rac{x^3}{3!}$
+- $(1+x)^rac{1}{2} = 1 + rac{x}{2}$
+''';
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(
+            create: (_) => SettingsProvider(storageService),
+          ),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(body: MarkdownViewer(data: markdown)),
+        ),
+      ),
+    );
+
+    final bulletFinder = find.byWidgetPredicate(
+      (widget) =>
+          widget is Container &&
+          widget.constraints?.hasTightWidth == true &&
+          widget.constraints?.hasTightHeight == true &&
+          widget.constraints?.minWidth == 6 &&
+          widget.constraints?.minHeight == 6,
+    );
+
+    expect(bulletFinder, findsNWidgets(3));
+  });
 }

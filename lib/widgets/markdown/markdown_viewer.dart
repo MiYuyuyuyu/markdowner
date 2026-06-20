@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../providers/settings_provider.dart';
 import 'latex_support.dart';
 import 'markdown_preprocessor.dart';
+import 'markdown_render_keys.dart';
 
 List<InlineSpan> _flattenVisibleContent(InlineSpan span) {
   if (span is WidgetSpan) {
@@ -32,7 +33,11 @@ List<InlineSpan> _flattenVisibleContent(InlineSpan span) {
 WidgetSpan? _extractSingleWidgetSpan(InlineSpan span) {
   final flattened = _flattenVisibleContent(span);
   if (flattened.length == 1 && flattened.single is WidgetSpan) {
-    return flattened.single as WidgetSpan;
+    final widgetSpan = flattened.single as WidgetSpan;
+    final childKey = widgetSpan.child.key;
+    if (childKey == tableWrapperKey || childKey == blockLatexKey) {
+      return widgetSpan;
+    }
   }
 
   return null;
@@ -82,7 +87,7 @@ MarkdownConfig _buildMarkdownConfig({
         bodyStyle: baseStyle,
         wrapper: (table) => LayoutBuilder(
           builder: (context, constraints) => SizedBox(
-            key: const ValueKey('markdown-table-wrapper'),
+            key: tableWrapperKey,
             width: constraints.hasBoundedWidth
                 ? constraints.maxWidth
                 : MediaQuery.sizeOf(context).width,
