@@ -1,0 +1,39 @@
+import 'package:flutter/material.dart';
+import '../services/storage_service.dart';
+
+class SettingsProvider extends ChangeNotifier {
+  final StorageService _storageService;
+  late bool _isDarkMode;
+  late double _fontSize;
+  bool _showSidebar = true;
+
+  SettingsProvider(this._storageService) {
+    _isDarkMode = _storageService.isDarkMode();
+    _fontSize = _storageService.getFontSize();
+  }
+
+  bool get isDarkMode => _isDarkMode;
+  double get fontSize => _fontSize;
+  bool get showSidebar => _showSidebar;
+  ThemeMode get themeMode => _isDarkMode ? ThemeMode.dark : ThemeMode.light;
+
+  void toggleTheme() {
+    _isDarkMode = !_isDarkMode;
+    _storageService.setDarkMode(_isDarkMode);
+    notifyListeners();
+  }
+
+  void setFontSize(double size) {
+    _fontSize = size.clamp(12.0, 32.0);
+    _storageService.setFontSize(_fontSize);
+    notifyListeners();
+  }
+
+  void increaseFontSize() => setFontSize(_fontSize + 2);
+  void decreaseFontSize() => setFontSize(_fontSize - 2);
+
+  void toggleSidebar() {
+    _showSidebar = !_showSidebar;
+    notifyListeners();
+  }
+}
