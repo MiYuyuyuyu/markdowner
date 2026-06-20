@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:markdown/markdown.dart' as md;
 import 'package:markdown_widget/markdown_widget.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
+import 'package:markdown/markdown.dart' as md;
+
+import 'markdown_preprocessor.dart';
 
 const _latexTag = 'latex';
 
@@ -44,7 +46,8 @@ class LatexNode extends SpanNode {
 
   @override
   InlineSpan build() {
-    final content = attributes['content'] ?? '';
+    final content =
+        (attributes['content'] ?? '').replaceAll(latexPipeToken, '|');
     final isInline = attributes['isInline'] == 'true';
     final style = parentStyle ?? config.p.textStyle;
 
