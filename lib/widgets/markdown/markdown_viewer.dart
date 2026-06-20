@@ -60,6 +60,47 @@ Widget _buildMarkdownBlock(InlineSpan span) {
   return Text.rich(span);
 }
 
+double _scaledHeadingSize(double bodySize, double defaultHeadingSize) {
+  return bodySize * (defaultHeadingSize / 16);
+}
+
+MarkdownConfig _buildMarkdownConfig({
+  required bool isDark,
+  required TextStyle baseStyle,
+}) {
+  final baseConfig =
+      isDark ? MarkdownConfig.darkConfig : MarkdownConfig.defaultConfig;
+
+  TextStyle headingStyle(double defaultSize) {
+    return baseStyle.copyWith(
+      fontSize: _scaledHeadingSize(baseStyle.fontSize!, defaultSize),
+      fontWeight: FontWeight.w700,
+      height: 1.25,
+    );
+  }
+
+  return baseConfig.copy(
+    configs: [
+      PConfig(textStyle: baseStyle),
+      H1Config(style: headingStyle(32)),
+      H2Config(style: headingStyle(24)),
+      H3Config(style: headingStyle(20)),
+      H4Config(style: headingStyle(16)),
+      H5Config(style: headingStyle(16)),
+      H6Config(style: headingStyle(16)),
+      PreConfig(textStyle: baseStyle),
+      TableConfig(
+        headerStyle: baseStyle.copyWith(fontWeight: FontWeight.w700),
+        bodyStyle: baseStyle,
+        wrapper: (table) => SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: table,
+        ),
+      ),
+    ],
+  );
+}
+
 class MarkdownViewer extends StatelessWidget {
   final String data;
   final double initialScrollOffset;
@@ -76,22 +117,15 @@ class MarkdownViewer extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final settings = context.watch<SettingsProvider>();
-    final fontStyle = TextStyle(fontSize: settings.fontSize, height: 1.6);
-    final config =
-        (isDark ? MarkdownConfig.darkConfig : MarkdownConfig.defaultConfig)
-            .copy(
-              configs: [
-                PConfig(textStyle: fontStyle),
-                TableConfig(
-                  headerStyle: fontStyle.copyWith(fontWeight: FontWeight.w700),
-                  bodyStyle: fontStyle,
-                  wrapper: (table) => SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: table,
-                  ),
-                ),
-              ],
-            );
+    final themeStyle = Theme.of(context).textTheme.bodyMedium;
+    final fontStyle = (themeStyle ?? const TextStyle()).copyWith(
+      fontSize: settings.fontSize,
+      height: 1.6,
+    );
+    final config = _buildMarkdownConfig(
+      isDark: isDark,
+      baseStyle: fontStyle,
+    );
 
     return MarkdownWidget(
       data: normalizeMarkdownForParsing(data),

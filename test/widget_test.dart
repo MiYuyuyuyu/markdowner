@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:markdown_app/theme/app_theme.dart';
 import 'package:markdown_app/providers/settings_provider.dart';
 import 'package:markdown_app/widgets/markdown/markdown_viewer.dart';
 import 'package:markdown_app/widgets/welcome/welcome_page.dart';
@@ -162,5 +163,37 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('MarkdownViewer scales heading text with reader font size', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({'font_size': 22.0});
+    final storageService = await StorageService.init();
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(
+            create: (_) => SettingsProvider(storageService),
+          ),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(body: MarkdownViewer(data: '## 标题测试')),
+        ),
+      ),
+    );
+
+    final richTextFinder = find.byWidgetPredicate(
+      (widget) => widget is RichText && widget.text.toPlainText() == '标题测试',
+    );
+    final richTextWidget = tester.widget<RichText>(richTextFinder);
+
+    expect(_findFontSizeForText(richTextWidget.text, '标题测试'), 33.0);
+  });
+
+  test('AppTheme uses HarmonyOS Sans family', () {
+    expect(AppTheme.light().textTheme.bodyMedium?.fontFamily, 'HarmonyOS Sans');
+    expect(AppTheme.dark().textTheme.bodyMedium?.fontFamily, 'HarmonyOS Sans');
   });
 }
