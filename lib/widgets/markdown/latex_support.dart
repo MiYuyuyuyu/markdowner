@@ -22,10 +22,14 @@ class LatexSyntax extends md.InlineSyntax {
     String content = '';
     bool isInline = true;
 
-    if (matchValue.startsWith('\$\$') && matchValue.endsWith('\$\$') && matchValue.length > 4) {
+    if (matchValue.startsWith('\$\$') &&
+        matchValue.endsWith('\$\$') &&
+        matchValue.length > 4) {
       content = matchValue.substring(2, matchValue.length - 2);
       isInline = false;
-    } else if (matchValue.startsWith('\$') && matchValue.endsWith('\$') && matchValue.length > 2) {
+    } else if (matchValue.startsWith('\$') &&
+        matchValue.endsWith('\$') &&
+        matchValue.length > 2) {
       content = matchValue.substring(1, matchValue.length - 1);
     }
 
@@ -46,8 +50,10 @@ class LatexNode extends SpanNode {
 
   @override
   InlineSpan build() {
-    final content =
-        (attributes['content'] ?? '').replaceAll(latexPipeToken, '|');
+    final content = (attributes['content'] ?? '').replaceAll(
+      latexPipeToken,
+      '|',
+    );
     final isInline = attributes['isInline'] == 'true';
     final style = parentStyle ?? config.p.textStyle;
 
@@ -61,10 +67,7 @@ class LatexNode extends SpanNode {
       textStyle: style,
       textScaleFactor: 1,
       onErrorFallback: (error) {
-        return Text(
-          textContent,
-          style: style.copyWith(color: Colors.red),
-        );
+        return Text(textContent, style: style.copyWith(color: Colors.red));
       },
     );
 

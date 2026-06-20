@@ -29,9 +29,7 @@ class AppTheme {
         scrolledUnderElevation: 1,
         backgroundColor: scheme.surface,
       ),
-      drawerTheme: DrawerThemeData(
-        backgroundColor: scheme.surface,
-      ),
+      drawerTheme: DrawerThemeData(backgroundColor: scheme.surface),
       cardTheme: CardThemeData(
         elevation: 0,
         shape: RoundedRectangleBorder(

@@ -28,8 +28,8 @@ class _TabButtonState extends State<TabButton> {
     final bgColor = widget.isActive
         ? colorScheme.surface
         : _isHovered
-            ? colorScheme.surfaceContainerHighest
-            : colorScheme.surfaceContainerLow;
+        ? colorScheme.surfaceContainerHighest
+        : colorScheme.surfaceContainerLow;
 
     final textColor = widget.isActive
         ? colorScheme.onSurface
@@ -47,9 +47,7 @@ class _TabButtonState extends State<TabButton> {
             color: bgColor,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
             border: widget.isActive
-                ? Border(
-                    top: BorderSide(color: colorScheme.primary, width: 2),
-                  )
+                ? Border(top: BorderSide(color: colorScheme.primary, width: 2))
                 : null,
           ),
           padding: const EdgeInsets.only(left: 12, right: 4, top: 6, bottom: 6),
@@ -64,7 +62,9 @@ class _TabButtonState extends State<TabButton> {
                   style: TextStyle(
                     fontSize: 13,
                     color: textColor,
-                    fontWeight: widget.isActive ? FontWeight.w500 : FontWeight.normal,
+                    fontWeight: widget.isActive
+                        ? FontWeight.w500
+                        : FontWeight.normal,
                   ),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
@@ -118,7 +118,9 @@ class _CloseButtonState extends State<_CloseButton> {
             child: Icon(
               Icons.close,
               size: 14,
-              color: _hovered ? colorScheme.error : colorScheme.onSurfaceVariant,
+              color: _hovered
+                  ? colorScheme.error
+                  : colorScheme.onSurfaceVariant,
             ),
           ),
         ),

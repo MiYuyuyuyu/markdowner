@@ -30,10 +30,7 @@ class WelcomePage extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             '支持 LaTeX 数学公式的 Markdown 阅读器',
-            style: TextStyle(
-              fontSize: 14,
-              color: colorScheme.onSurfaceVariant,
-            ),
+            style: TextStyle(fontSize: 14, color: colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 40),
           FilledButton.icon(

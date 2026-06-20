@@ -112,7 +112,10 @@ class _TabContextMenu extends StatelessWidget {
     showMenu<String>(
       context: context,
       position: RelativeRect.fromLTRB(
-        position.dx, position.dy, position.dx, position.dy,
+        position.dx,
+        position.dy,
+        position.dx,
+        position.dy,
       ),
       items: [
         const PopupMenuItem(value: 'close', child: Text('关闭')),

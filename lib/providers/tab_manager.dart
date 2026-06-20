@@ -15,8 +15,9 @@ class TabManager extends ChangeNotifier {
   int get activeIndex => _activeIndex;
   bool get hasTabs => _tabs.isNotEmpty;
 
-  TabItem? get activeTab =>
-      _activeIndex >= 0 && _activeIndex < _tabs.length ? _tabs[_activeIndex] : null;
+  TabItem? get activeTab => _activeIndex >= 0 && _activeIndex < _tabs.length
+      ? _tabs[_activeIndex]
+      : null;
 
   Future<void> openFilePicker() async {
     final file = await _fileService.pickMarkdownFile();

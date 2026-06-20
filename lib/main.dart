@@ -16,9 +16,7 @@ void main() async {
       providers: [
         Provider<StorageService>.value(value: storageService),
         Provider<FileService>.value(value: fileService),
-        ChangeNotifierProvider(
-          create: (_) => SettingsProvider(storageService),
-        ),
+        ChangeNotifierProvider(create: (_) => SettingsProvider(storageService)),
         ChangeNotifierProvider(
           create: (_) => TabManager(fileService, storageService),
         ),

@@ -15,5 +15,6 @@ class TabItem {
 
   bool get isUnsaved => filePath == null;
 
-  String get displayTitle => title.length > 24 ? '${title.substring(0, 21)}...' : title;
+  String get displayTitle =>
+      title.length > 24 ? '${title.substring(0, 21)}...' : title;
 }

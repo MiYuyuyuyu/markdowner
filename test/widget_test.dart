@@ -50,34 +50,37 @@ void main() {
     expect(find.text('打开文件'), findsNWidgets(2));
   });
 
-  testWidgets('MarkdownViewer keeps table cell text after latex absolute value', (
-    tester,
-  ) async {
-    SharedPreferences.setMockInitialValues({});
-    final storageService = await StorageService.init();
+  testWidgets(
+    'MarkdownViewer keeps table cell text after latex absolute value',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final storageService = await StorageService.init();
 
-    const markdown = r'''
+      const markdown = r'''
 | 性质 | 定义 | 常见判别 |
 |------|------|---------|
 | **有界性** | $\exists M>0$，使 $|f(x)| \leq M$ | 闭区间上连续函数必有界 |
 ''';
 
-    await tester.pumpWidget(
-      MultiProvider(
-        providers: [
-          ChangeNotifierProvider(
-            create: (_) => SettingsProvider(storageService),
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider(
+              create: (_) => SettingsProvider(storageService),
+            ),
+          ],
+          child: const MaterialApp(
+            home: Scaffold(body: MarkdownViewer(data: markdown)),
           ),
-        ],
-        child: const MaterialApp(
-          home: Scaffold(body: MarkdownViewer(data: markdown)),
         ),
-      ),
-    );
-    expect(find.text('闭区间上连续函数必有界'), findsOneWidget);
-  });
+      );
+      expect(find.text('闭区间上连续函数必有界'), findsOneWidget);
+    },
+  );
 
-  testWidgets('MarkdownViewer uses configured reader font size', (tester) async {
+  testWidgets('MarkdownViewer uses configured reader font size', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({'font_size': 22.0});
     final storageService = await StorageService.init();
 
@@ -94,8 +97,7 @@ void main() {
       ),
     );
     final richTextFinder = find.byWidgetPredicate(
-      (widget) =>
-          widget is RichText && widget.text.toPlainText() == '普通正文测试',
+      (widget) => widget is RichText && widget.text.toPlainText() == '普通正文测试',
     );
     final richTextWidget = tester.widget<RichText>(richTextFinder);
 

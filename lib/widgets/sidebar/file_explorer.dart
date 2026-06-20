@@ -85,7 +85,11 @@ class _OpenFileButton extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         child: Row(
           children: [
-            Icon(Icons.add_circle_outline, size: 18, color: colorScheme.primary),
+            Icon(
+              Icons.add_circle_outline,
+              size: 18,
+              color: colorScheme.primary,
+            ),
             const SizedBox(width: 8),
             Text(
               '打开 Markdown 文件',
@@ -141,10 +145,7 @@ class _RecentFileItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final fileName = path.split(Platform.pathSeparator).last;
-    final dirPath = path.substring(
-      0,
-      path.length - fileName.length - 1,
-    );
+    final dirPath = path.substring(0, path.length - fileName.length - 1);
     final colorScheme = Theme.of(context).colorScheme;
 
     return InkWell(
@@ -153,7 +154,11 @@ class _RecentFileItem extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         child: Row(
           children: [
-            Icon(Icons.description_outlined, size: 16, color: colorScheme.onSurfaceVariant),
+            Icon(
+              Icons.description_outlined,
+              size: 16,
+              color: colorScheme.onSurfaceVariant,
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: Column(
@@ -161,12 +166,18 @@ class _RecentFileItem extends StatelessWidget {
                 children: [
                   Text(
                     fileName,
-                    style: TextStyle(fontSize: 13, color: colorScheme.onSurface),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: colorScheme.onSurface,
+                    ),
                     overflow: TextOverflow.ellipsis,
                   ),
                   Text(
                     dirPath,
-                    style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],

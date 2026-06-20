@@ -23,14 +23,17 @@ class MarkdownViewer extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final settings = context.watch<SettingsProvider>();
     final fontStyle = TextStyle(fontSize: settings.fontSize, height: 1.6);
-    final config = (isDark ? MarkdownConfig.darkConfig : MarkdownConfig.defaultConfig)
-        .copy(configs: [
-      PConfig(textStyle: fontStyle),
-      TableConfig(
-        headerStyle: fontStyle.copyWith(fontWeight: FontWeight.w700),
-        bodyStyle: fontStyle,
-      ),
-    ]);
+    final config =
+        (isDark ? MarkdownConfig.darkConfig : MarkdownConfig.defaultConfig)
+            .copy(
+              configs: [
+                PConfig(textStyle: fontStyle),
+                TableConfig(
+                  headerStyle: fontStyle.copyWith(fontWeight: FontWeight.w700),
+                  bodyStyle: fontStyle,
+                ),
+              ],
+            );
 
     return MarkdownWidget(
       data: normalizeMarkdownForParsing(data),
