@@ -72,7 +72,13 @@ class LatexNode extends SpanNode {
     );
 
     if (isInline) {
-      return WidgetSpan(child: latex, alignment: PlaceholderAlignment.middle);
+      return WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: latex,
+        ),
+      );
     }
 
     return WidgetSpan(

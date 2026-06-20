@@ -103,4 +103,64 @@ void main() {
 
     expect(_findFontSizeForText(richTextWidget.text, '普通正文测试'), 22.0);
   });
+
+  testWidgets('MarkdownViewer does not overflow narrow tables', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final storageService = await StorageService.init();
+
+    const markdown = r'''
+| 原函数 | 等价无穷小 |
+|------|------|
+| $	an x - x$ | $rac{1}{3}x^3$ |
+| $x-	ext{arctan}x$ | $rac{1}{3}x^3$ |
+''';
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(
+            create: (_) => SettingsProvider(storageService),
+          ),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: SizedBox(width: 320, child: MarkdownViewer(data: markdown)),
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('MarkdownViewer does not overflow narrow plain text tables', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final storageService = await StorageService.init();
+
+    const markdown = r'''
+| 原函数 | 等价无穷小 |
+|------|------|
+| tan x - x | 1/3 x^3 |
+| x - arctan x | 1/3 x^3 |
+''';
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(
+            create: (_) => SettingsProvider(storageService),
+          ),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: SizedBox(width: 320, child: MarkdownViewer(data: markdown)),
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+  });
 }
