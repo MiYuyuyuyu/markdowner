@@ -6,55 +6,42 @@ import '../../providers/settings_provider.dart';
 import 'latex_support.dart';
 import 'markdown_preprocessor.dart';
 
-WidgetSpan? _extractSingleWidgetSpan(InlineSpan span) {
+List<InlineSpan> _flattenVisibleContent(InlineSpan span) {
   if (span is WidgetSpan) {
-    return span;
+    return [span];
   }
 
   if (span is! TextSpan) {
-    return null;
+    return [span];
   }
 
-  if ((span.text ?? '').isNotEmpty) {
-    return null;
+  final flattened = <InlineSpan>[];
+  final text = span.text ?? '';
+  if (text.trim().isNotEmpty) {
+    flattened.add(span);
+    return flattened;
   }
 
-  final children = span.children;
-  if (children == null || children.length != 1) {
-    return null;
+  for (final child in span.children ?? const <InlineSpan>[]) {
+    flattened.addAll(_flattenVisibleContent(child));
   }
 
-  return _extractSingleWidgetSpan(children.single);
+  return flattened;
 }
 
-bool _containsWidgetSpan(InlineSpan span) {
-  if (span is WidgetSpan) {
-    return true;
+WidgetSpan? _extractSingleWidgetSpan(InlineSpan span) {
+  final flattened = _flattenVisibleContent(span);
+  if (flattened.length == 1 && flattened.single is WidgetSpan) {
+    return flattened.single as WidgetSpan;
   }
 
-  if (span is! TextSpan) {
-    return false;
-  }
-
-  final children = span.children;
-  if (children == null || children.isEmpty) {
-    return false;
-  }
-
-  return children.any(_containsWidgetSpan);
+  return null;
 }
 
 Widget _buildMarkdownBlock(InlineSpan span) {
   final widgetSpan = _extractSingleWidgetSpan(span);
   if (widgetSpan != null) {
     return widgetSpan.child;
-  }
-
-  if (_containsWidgetSpan(span)) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Text.rich(span),
-    );
   }
 
   return Text.rich(span);
@@ -90,11 +77,17 @@ MarkdownConfig _buildMarkdownConfig({
       H6Config(style: headingStyle(16)),
       PreConfig(textStyle: baseStyle),
       TableConfig(
+        defaultColumnWidth: const FlexColumnWidth(),
         headerStyle: baseStyle.copyWith(fontWeight: FontWeight.w700),
         bodyStyle: baseStyle,
-        wrapper: (table) => SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: table,
+        wrapper: (table) => LayoutBuilder(
+          builder: (context, constraints) => SizedBox(
+            key: const ValueKey('markdown-table-wrapper'),
+            width: constraints.hasBoundedWidth
+                ? constraints.maxWidth
+                : MediaQuery.sizeOf(context).width,
+            child: table,
+          ),
         ),
       ),
     ],

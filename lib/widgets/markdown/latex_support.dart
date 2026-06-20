@@ -6,6 +6,7 @@ import 'package:markdown/markdown.dart' as md;
 import 'markdown_preprocessor.dart';
 
 const _latexTag = 'latex';
+const _inlineMathScaleFactor = 1.12;
 
 SpanNodeGeneratorWithTag latexGenerator = SpanNodeGeneratorWithTag(
   tag: _latexTag,
@@ -65,7 +66,7 @@ class LatexNode extends SpanNode {
       content,
       mathStyle: isInline ? MathStyle.text : MathStyle.display,
       textStyle: style,
-      textScaleFactor: 1,
+      textScaleFactor: isInline ? _inlineMathScaleFactor : 1,
       onErrorFallback: (error) {
         return Text(textContent, style: style.copyWith(color: Colors.red));
       },

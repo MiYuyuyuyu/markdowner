@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:markdown_app/theme/app_theme.dart';
 import 'package:markdown_app/providers/settings_provider.dart';
 import 'package:markdown_app/widgets/markdown/markdown_viewer.dart';
@@ -195,5 +196,87 @@ void main() {
   test('AppTheme uses HarmonyOS Sans family', () {
     expect(AppTheme.light().textTheme.bodyMedium?.fontFamily, 'HarmonyOS Sans');
     expect(AppTheme.dark().textTheme.bodyMedium?.fontFamily, 'HarmonyOS Sans');
+  });
+
+  testWidgets('MarkdownViewer lets tables use available width on wide layouts', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1900, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    SharedPreferences.setMockInitialValues({});
+    final storageService = await StorageService.init();
+
+    const markdown = r'''
+| 性质 | 定义 | 常见判别 |
+|------|------|---------|
+| **有界性** | $orall x, |f(x)| 	ext{ 有界}$ | 闭区间上连续函数必有界 |
+| **单调性** | $x_1 < x_2 ightarrow f(x_1) < f(x_2)$ | $f'(x) > 0$ 则递增 |
+''';
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(
+            create: (_) => SettingsProvider(storageService),
+          ),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(body: MarkdownViewer(data: markdown)),
+        ),
+      ),
+    );
+
+    final wrapperSize = tester.getSize(find.byKey(const ValueKey('markdown-table-wrapper')));
+    expect(wrapperSize.width, greaterThan(1800));
+  });
+
+  testWidgets('MarkdownViewer keeps inline math tied to reader font size', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({'font_size': 28.0});
+    final storageService = await StorageService.init();
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(
+            create: (_) => SettingsProvider(storageService),
+          ),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(body: MarkdownViewer(data: r'定义：$f(x)$ 在区间上连续')),
+        ),
+      ),
+    );
+
+    final mathWidget = tester.widget<Math>(find.byType(Math));
+
+    expect(mathWidget.textStyle?.fontSize, 28.0);
+  });
+
+  testWidgets('MarkdownViewer boosts inline math scale for visual consistency', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({'font_size': 28.0});
+    final storageService = await StorageService.init();
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(
+            create: (_) => SettingsProvider(storageService),
+          ),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(body: MarkdownViewer(data: r'定义：$f(x)$ 在区间上连续')),
+        ),
+      ),
+    );
+
+    final mathWidget = tester.widget<Math>(find.byType(Math));
+
+    expect(mathWidget.textScaleFactor, greaterThan(1.0));
   });
 }
