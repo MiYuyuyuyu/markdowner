@@ -58,16 +58,18 @@ class HomeScreen extends StatelessWidget {
 
     return AppBar(
       title: const Text('Markdown Reader', style: TextStyle(fontSize: 16)),
-      leading: IconButton(
-        icon: const Icon(Icons.menu),
-        onPressed: () {
-          if (isWide) {
-            settings.toggleSidebar();
-          } else {
-            Scaffold.of(context).openDrawer();
-          }
-        },
-        tooltip: '切换侧边栏',
+      leading: Builder(
+        builder: (ctx) => IconButton(
+          icon: const Icon(Icons.menu),
+          onPressed: () {
+            if (isWide) {
+              settings.toggleSidebar();
+            } else {
+              Scaffold.of(ctx).openDrawer();
+            }
+          },
+          tooltip: '切换侧边栏',
+        ),
       ),
       actions: [
         _FontSizeControls(settings: settings, colorScheme: colorScheme),
