@@ -31,19 +31,15 @@
 
 ## 截图
 
-你可以在这里补充项目截图：
-
 - 主界面
+  ![home](./doc/screenshots/home.png)
 - 多标签页效果
+  ![index](./doc/screenshots/index.png)
 - LaTeX 公式渲染效果
+  ![latex](./doc/screenshots/latex.png)
 - 表格渲染效果
+  ![form](./doc/screenshots/form.png)
 
-示例：
-
-```md
-![Home](./docs/screenshots/home.png)
-![Latex](./docs/screenshots/latex.png)
-```
 
 ## 技术栈
 
