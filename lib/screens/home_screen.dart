@@ -8,18 +8,23 @@ import '../widgets/markdown/markdown_viewer.dart';
 import '../widgets/sidebar/file_explorer.dart';
 import '../widgets/welcome/welcome_page.dart';
 
+const _sidebarBreakpoint = 720.0;
+
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final isWide = MediaQuery.of(context).size.width > _sidebarBreakpoint;
+
     return CallbackShortcuts(
       bindings: _buildShortcuts(context),
       child: Focus(
         autofocus: true,
         child: Scaffold(
-          appBar: _buildAppBar(context),
-          body: _buildBody(context),
+          appBar: _buildAppBar(context, isWide),
+          drawer: isWide ? null : _DrawerSidebar(),
+          body: _buildBody(context, isWide),
         ),
       ),
     );
@@ -47,7 +52,7 @@ class HomeScreen extends StatelessWidget {
     };
   }
 
-  PreferredSizeWidget _buildAppBar(BuildContext context) {
+  PreferredSizeWidget _buildAppBar(BuildContext context, bool isWide) {
     final settings = context.watch<SettingsProvider>();
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -55,7 +60,13 @@ class HomeScreen extends StatelessWidget {
       title: const Text('Markdown Reader', style: TextStyle(fontSize: 16)),
       leading: IconButton(
         icon: const Icon(Icons.menu),
-        onPressed: settings.toggleSidebar,
+        onPressed: () {
+          if (isWide) {
+            settings.toggleSidebar();
+          } else {
+            Scaffold.of(context).openDrawer();
+          }
+        },
         tooltip: '切换侧边栏',
       ),
       actions: [
@@ -70,17 +81,68 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildBody(BuildContext context) {
+  Widget _buildBody(BuildContext context, bool isWide) {
     final settings = context.watch<SettingsProvider>();
-    final isWide = MediaQuery.of(context).size.width > 600;
 
     return Row(
       children: [
-        if (settings.showSidebar && isWide) const FileExplorer(),
+        if (isWide && settings.showSidebar) const FileExplorer(),
         const Expanded(child: _ContentArea()),
       ],
     );
   }
+}
+
+class _DrawerSidebar extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final tabManager = context.watch<TabManager>();
+
+    return Drawer(
+      child: _DrawerAutoClose(
+        tabManager: tabManager,
+        child: const SafeArea(child: FileExplorer()),
+      ),
+    );
+  }
+}
+
+class _DrawerAutoClose extends StatefulWidget {
+  final TabManager tabManager;
+  final Widget child;
+
+  const _DrawerAutoClose({required this.tabManager, required this.child});
+
+  @override
+  State<_DrawerAutoClose> createState() => _DrawerAutoCloseState();
+}
+
+class _DrawerAutoCloseState extends State<_DrawerAutoClose> {
+  int _previousTabCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _previousTabCount = widget.tabManager.tabs.length;
+    widget.tabManager.addListener(_onTabChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.tabManager.removeListener(_onTabChanged);
+    super.dispose();
+  }
+
+  void _onTabChanged() {
+    final currentCount = widget.tabManager.tabs.length;
+    if (currentCount > _previousTabCount) {
+      Navigator.of(context).pop();
+    }
+    _previousTabCount = currentCount;
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 class _FontSizeControls extends StatelessWidget {

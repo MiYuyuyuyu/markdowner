@@ -89,7 +89,10 @@ class LatexNode extends SpanNode {
         width: double.infinity,
         alignment: Alignment.center,
         margin: const EdgeInsets.symmetric(vertical: 16),
-        child: latex,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: latex,
+        ),
       ),
     );
   }
