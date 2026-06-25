@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:markdown_widget/markdown_widget.dart';
 
 class HeadingItem {
   final int level;
@@ -33,22 +34,27 @@ List<HeadingItem> parseHeadings(String markdown) {
   return headings;
 }
 
-class TocPanel extends StatelessWidget {
+class TocPanel extends StatefulWidget {
   final String markdownData;
-  final ValueChanged<int>? onHeadingTap;
+  final TocController? tocController;
   final VoidCallback? onClose;
 
   const TocPanel({
     super.key,
     required this.markdownData,
-    this.onHeadingTap,
+    this.tocController,
     this.onClose,
   });
 
   @override
+  State<TocPanel> createState() => _TocPanelState();
+}
+
+class _TocPanelState extends State<TocPanel> {
+  @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final headings = parseHeadings(markdownData);
+    final headings = parseHeadings(widget.markdownData);
 
     return Container(
       width: 240,
@@ -63,10 +69,19 @@ class TocPanel extends StatelessWidget {
         children: [
           _buildHeader(context, colorScheme),
           const Divider(height: 1),
-          Expanded(child: _buildHeadingList(context, headings, colorScheme)),
+          Expanded(
+            child: _buildHeadingList(context, headings, colorScheme),
+          ),
         ],
       ),
     );
+  }
+
+  void _jumpToHeading(int headingIndex) {
+    final tocList = widget.tocController?.tocList;
+    if (tocList == null || headingIndex >= tocList.length) return;
+    final widgetIndex = tocList.elementAt(headingIndex).widgetIndex;
+    widget.tocController?.jumpToIndex(widgetIndex);
   }
 
   Widget _buildHeader(BuildContext context, ColorScheme colorScheme) {
@@ -85,12 +100,12 @@ class TocPanel extends StatelessWidget {
             ),
           ),
           const Spacer(),
-          if (onClose != null)
+          if (widget.onClose != null)
             SizedBox(
               width: 32,
               height: 32,
               child: IconButton(
-                onPressed: onClose,
+                onPressed: widget.onClose,
                 icon: Icon(Icons.close, size: 16, color: colorScheme.onSurfaceVariant),
                 splashRadius: 14,
                 visualDensity: VisualDensity.compact,
@@ -125,6 +140,7 @@ class TocPanel extends StatelessWidget {
       itemBuilder: (context, index) => _buildHeadingItem(
         context,
         headings[index],
+        index,
         colorScheme,
       ),
     );
@@ -133,26 +149,19 @@ class TocPanel extends StatelessWidget {
   Widget _buildHeadingItem(
     BuildContext context,
     HeadingItem heading,
+    int index,
     ColorScheme colorScheme,
   ) {
     final indent = (heading.level - 1) * 16.0;
 
     return InkWell(
-      onTap: () => onHeadingTap?.call(heading.lineIndex),
+      onTap: () => _jumpToHeading(index),
       child: Container(
         padding: EdgeInsets.only(
           left: 12 + indent,
           right: 12,
           top: 6,
           bottom: 6,
-        ),
-        decoration: BoxDecoration(
-          border: Border(
-            left: BorderSide(
-              color: Colors.transparent,
-              width: 2,
-            ),
-          ),
         ),
         child: Text(
           heading.title,

@@ -15,6 +15,10 @@ String normalizeMermaidBlocks(String data) {
   });
 }
 
+String preprocessMarkdownData(String rawData) {
+  return normalizeMarkdownForParsing(normalizeMermaidBlocks(rawData));
+}
+
 String normalizeMarkdownForParsing(String data) {
   final buffer = StringBuffer();
   var index = 0;

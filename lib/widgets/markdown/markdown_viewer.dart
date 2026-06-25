@@ -104,14 +104,18 @@ MarkdownConfig _buildMarkdownConfig({
 
 class MarkdownViewer extends StatelessWidget {
   final String data;
+  final bool preprocessed;
   final double initialScrollOffset;
   final ValueChanged<double>? onScrollChanged;
+  final TocController? tocController;
 
   const MarkdownViewer({
     super.key,
     required this.data,
+    this.preprocessed = false,
     this.initialScrollOffset = 0,
     this.onScrollChanged,
+    this.tocController,
   });
 
   @override
@@ -128,8 +132,8 @@ class MarkdownViewer extends StatelessWidget {
       baseStyle: fontStyle,
     );
 
-    final mermaidData = normalizeMermaidBlocks(data);
-    final processedData = normalizeMarkdownForParsing(mermaidData);
+    final mermaidData = preprocessed ? data : normalizeMermaidBlocks(data);
+    final processedData = preprocessed ? data : normalizeMarkdownForParsing(mermaidData);
 
     final providers = extractMermaidImageProviders(mermaidData);
     if (providers.isNotEmpty && !Platform.environment.containsKey('FLUTTER_TEST')) {
@@ -145,6 +149,7 @@ class MarkdownViewer extends StatelessWidget {
       padding: const EdgeInsets.all(24),
       selectable: true,
       config: config,
+      tocController: tocController,
       markdownGenerator: MarkdownGenerator(
         generators: [latexGenerator, mermaidGenerator],
         inlineSyntaxList: [LatexSyntax(), MermaidSyntax()],

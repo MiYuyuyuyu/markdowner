@@ -1,24 +1,35 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:markdown_widget/markdown_widget.dart';
 import 'package:provider/provider.dart';
 import '../providers/tab_manager.dart';
 import '../providers/settings_provider.dart';
 import '../widgets/tab_bar/browser_tab_bar.dart';
 import '../widgets/markdown/markdown_viewer.dart';
+import '../widgets/markdown/markdown_preprocessor.dart';
 import '../widgets/navigation/toc_panel.dart';
 import '../widgets/sidebar/file_explorer.dart';
 import '../widgets/welcome/welcome_page.dart';
 
 const _sidebarBreakpoint = 720.0;
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  final _tocController = TocController();
 
   @override
   Widget build(BuildContext context) {
     final isWide = MediaQuery.of(context).size.width > _sidebarBreakpoint;
     final tabManager = context.watch<TabManager>();
     final settings = context.watch<SettingsProvider>();
+    final rawData = tabManager.activeTab?.content ?? '';
+    final processedData = preprocessMarkdownData(rawData);
 
     return CallbackShortcuts(
       bindings: _buildShortcuts(context),
@@ -29,8 +40,11 @@ class HomeScreen extends StatelessWidget {
           drawer: isWide ? null : const _DrawerSidebar(),
           endDrawer: isWide || !settings.showToc
               ? null
-              : _TocDrawer(markdownData: tabManager.activeTab?.content ?? ''),
-          body: _buildBody(context, isWide),
+              : _TocDrawer(
+                  tocController: _tocController,
+                  markdownData: processedData,
+                ),
+          body: _buildBody(context, isWide, processedData),
         ),
       ),
     );
@@ -113,7 +127,7 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildBody(BuildContext context, bool isWide) {
+  Widget _buildBody(BuildContext context, bool isWide, String data) {
     final settings = context.watch<SettingsProvider>();
     final tabManager = context.watch<TabManager>();
 
@@ -122,10 +136,16 @@ class HomeScreen extends StatelessWidget {
         if (isWide && settings.showSidebar) const FileExplorer(),
         if (isWide && settings.showToc && tabManager.activeTab != null)
           TocPanel(
-            markdownData: tabManager.activeTab!.content,
+            tocController: _tocController,
+            markdownData: data,
             onClose: settings.closeToc,
           ),
-        Expanded(child: _ContentArea(tocVisible: isWide && settings.showToc)),
+        Expanded(
+          child: _ContentArea(
+            tocController: _tocController,
+            data: data,
+          ),
+        ),
       ],
     );
   }
@@ -148,15 +168,19 @@ class _DrawerSidebar extends StatelessWidget {
 }
 
 class _TocDrawer extends StatelessWidget {
+  final TocController tocController;
   final String markdownData;
 
-  const _TocDrawer({required this.markdownData});
+  const _TocDrawer({required this.tocController, required this.markdownData});
 
   @override
   Widget build(BuildContext context) {
     return Drawer(
       child: SafeArea(
-        child: TocPanel(markdownData: markdownData),
+        child: TocPanel(
+          tocController: tocController,
+          markdownData: markdownData,
+        ),
       ),
     );
   }
@@ -231,9 +255,10 @@ class _FontSizeControls extends StatelessWidget {
 }
 
 class _ContentArea extends StatelessWidget {
-  final bool tocVisible;
+  final TocController tocController;
+  final String data;
 
-  const _ContentArea({this.tocVisible = false});
+  const _ContentArea({required this.tocController, required this.data});
 
   @override
   Widget build(BuildContext context) {
@@ -254,8 +279,10 @@ class _ContentArea extends StatelessWidget {
     }
     return MarkdownViewer(
       key: ValueKey(activeTab.id),
-      data: activeTab.content,
+      data: data,
+      preprocessed: true,
       initialScrollOffset: activeTab.scrollOffset,
+      tocController: tocController,
     );
   }
 }
