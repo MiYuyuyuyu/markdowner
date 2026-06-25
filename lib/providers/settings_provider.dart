@@ -6,6 +6,7 @@ class SettingsProvider extends ChangeNotifier {
   late bool _isDarkMode;
   late double _fontSize;
   bool _showSidebar = true;
+  bool _showToc = false;
 
   SettingsProvider(this._storageService) {
     _isDarkMode = _storageService.isDarkMode();
@@ -15,6 +16,7 @@ class SettingsProvider extends ChangeNotifier {
   bool get isDarkMode => _isDarkMode;
   double get fontSize => _fontSize;
   bool get showSidebar => _showSidebar;
+  bool get showToc => _showToc;
   ThemeMode get themeMode => _isDarkMode ? ThemeMode.dark : ThemeMode.light;
 
   void toggleTheme() {
@@ -34,6 +36,16 @@ class SettingsProvider extends ChangeNotifier {
 
   void toggleSidebar() {
     _showSidebar = !_showSidebar;
+    notifyListeners();
+  }
+
+  void toggleToc() {
+    _showToc = !_showToc;
+    notifyListeners();
+  }
+
+  void closeToc() {
+    _showToc = false;
     notifyListeners();
   }
 }

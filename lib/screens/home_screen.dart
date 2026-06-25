@@ -5,6 +5,7 @@ import '../providers/tab_manager.dart';
 import '../providers/settings_provider.dart';
 import '../widgets/tab_bar/browser_tab_bar.dart';
 import '../widgets/markdown/markdown_viewer.dart';
+import '../widgets/navigation/toc_panel.dart';
 import '../widgets/sidebar/file_explorer.dart';
 import '../widgets/welcome/welcome_page.dart';
 
@@ -16,6 +17,8 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isWide = MediaQuery.of(context).size.width > _sidebarBreakpoint;
+    final tabManager = context.watch<TabManager>();
+    final settings = context.watch<SettingsProvider>();
 
     return CallbackShortcuts(
       bindings: _buildShortcuts(context),
@@ -23,7 +26,10 @@ class HomeScreen extends StatelessWidget {
         autofocus: true,
         child: Scaffold(
           appBar: _buildAppBar(context, isWide),
-          drawer: isWide ? null : _DrawerSidebar(),
+          drawer: isWide ? null : const _DrawerSidebar(),
+          endDrawer: isWide || !settings.showToc
+              ? null
+              : _TocDrawer(markdownData: tabManager.activeTab?.content ?? ''),
           body: _buildBody(context, isWide),
         ),
       ),
@@ -54,7 +60,9 @@ class HomeScreen extends StatelessWidget {
 
   PreferredSizeWidget _buildAppBar(BuildContext context, bool isWide) {
     final settings = context.watch<SettingsProvider>();
+    final tabManager = context.watch<TabManager>();
     final colorScheme = Theme.of(context).colorScheme;
+    final hasContent = tabManager.activeTab != null;
 
     return AppBar(
       title: const Text('Markdown Reader', style: TextStyle(fontSize: 16)),
@@ -72,9 +80,31 @@ class HomeScreen extends StatelessWidget {
         ),
       ),
       actions: [
+        if (hasContent)
+          Builder(
+            builder: (ctx) => IconButton(
+              icon: Icon(
+                settings.showToc ? Icons.list_alt : Icons.list_alt_outlined,
+              ),
+              onPressed: () {
+                if (isWide) {
+                  settings.toggleToc();
+                } else {
+                  if (settings.showToc) {
+                    settings.closeToc();
+                  } else {
+                    Scaffold.of(ctx).openEndDrawer();
+                  }
+                }
+              },
+              tooltip: '文档目录',
+            ),
+          ),
         _FontSizeControls(settings: settings, colorScheme: colorScheme),
         IconButton(
-          icon: Icon(settings.isDarkMode ? Icons.light_mode : Icons.dark_mode),
+          icon: Icon(
+            settings.isDarkMode ? Icons.light_mode : Icons.dark_mode,
+          ),
           onPressed: settings.toggleTheme,
           tooltip: settings.isDarkMode ? '切换亮色主题' : '切换暗色主题',
         ),
@@ -85,17 +115,25 @@ class HomeScreen extends StatelessWidget {
 
   Widget _buildBody(BuildContext context, bool isWide) {
     final settings = context.watch<SettingsProvider>();
+    final tabManager = context.watch<TabManager>();
 
     return Row(
       children: [
         if (isWide && settings.showSidebar) const FileExplorer(),
-        const Expanded(child: _ContentArea()),
+        if (isWide && settings.showToc && tabManager.activeTab != null)
+          TocPanel(
+            markdownData: tabManager.activeTab!.content,
+            onClose: settings.closeToc,
+          ),
+        Expanded(child: _ContentArea(tocVisible: isWide && settings.showToc)),
       ],
     );
   }
 }
 
 class _DrawerSidebar extends StatelessWidget {
+  const _DrawerSidebar();
+
   @override
   Widget build(BuildContext context) {
     final tabManager = context.watch<TabManager>();
@@ -104,6 +142,21 @@ class _DrawerSidebar extends StatelessWidget {
       child: _DrawerAutoClose(
         tabManager: tabManager,
         child: const SafeArea(child: FileExplorer()),
+      ),
+    );
+  }
+}
+
+class _TocDrawer extends StatelessWidget {
+  final String markdownData;
+
+  const _TocDrawer({required this.markdownData});
+
+  @override
+  Widget build(BuildContext context) {
+    return Drawer(
+      child: SafeArea(
+        child: TocPanel(markdownData: markdownData),
       ),
     );
   }
@@ -178,7 +231,9 @@ class _FontSizeControls extends StatelessWidget {
 }
 
 class _ContentArea extends StatelessWidget {
-  const _ContentArea();
+  final bool tocVisible;
+
+  const _ContentArea({this.tocVisible = false});
 
   @override
   Widget build(BuildContext context) {

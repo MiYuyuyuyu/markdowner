@@ -5,6 +5,7 @@ import 'package:markdown_app/theme/app_theme.dart';
 import 'package:markdown_app/providers/settings_provider.dart';
 import 'package:markdown_app/widgets/markdown/markdown_viewer.dart';
 import 'package:markdown_app/widgets/welcome/welcome_page.dart';
+import 'package:markdown_app/widgets/navigation/toc_panel.dart';
 import 'package:provider/provider.dart';
 import 'package:markdown_app/providers/tab_manager.dart';
 import 'package:markdown_app/services/file_service.dart';
@@ -344,5 +345,28 @@ graph TD
     );
 
     expect(find.byType(Image), findsOneWidget);
+  });
+
+  test('parseHeadings extracts levels and titles from markdown', () {
+    const data = r'''
+# 一级标题
+一些内容
+## 二级标题
+### 三级标题
+#### 四级标题
+##### 五级标题
+###### 六级标题
+''';
+
+    final headings = parseHeadings(data);
+    expect(headings, hasLength(6));
+    expect(headings[0].level, 1);
+    expect(headings[0].title, '一级标题');
+    expect(headings[1].level, 2);
+    expect(headings[1].title, '二级标题');
+    expect(headings[2].level, 3);
+    expect(headings[2].title, '三级标题');
+    expect(headings[5].level, 6);
+    expect(headings[5].title, '六级标题');
   });
 }
