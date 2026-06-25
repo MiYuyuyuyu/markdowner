@@ -316,4 +316,33 @@ void main() {
 
     expect(bulletFinder, findsNWidgets(3));
   });
+
+  testWidgets('MarkdownViewer renders mermaid blocks as images', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final storageService = await StorageService.init();
+
+    const markdown = r'''
+```mermaid
+graph TD
+    A --> B
+```
+''';
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(
+            create: (_) => SettingsProvider(storageService),
+          ),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(body: MarkdownViewer(data: markdown)),
+        ),
+      ),
+    );
+
+    expect(find.byType(Image), findsOneWidget);
+  });
 }

@@ -1,4 +1,19 @@
+import 'dart:convert';
+
 const latexPipeToken = '@@LATEX_PIPE@@';
+
+final _mermaidBlockRegex = RegExp(
+  r'```mermaid\s*\n(.*?)\n\s*```',
+  dotAll: true,
+);
+
+String normalizeMermaidBlocks(String data) {
+  return data.replaceAllMapped(_mermaidBlockRegex, (match) {
+    final code = match.group(1)!.trim();
+    final encoded = base64Url.encode(utf8.encode(code));
+    return '<mermaid>$encoded</mermaid>';
+  });
+}
 
 String normalizeMarkdownForParsing(String data) {
   final buffer = StringBuffer();

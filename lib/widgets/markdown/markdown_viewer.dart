@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:markdown_widget/markdown_widget.dart';
 import 'package:provider/provider.dart';
@@ -6,6 +8,7 @@ import '../../providers/settings_provider.dart';
 import 'latex_support.dart';
 import 'markdown_preprocessor.dart';
 import 'markdown_render_keys.dart';
+import 'mermaid_support.dart';
 
 List<InlineSpan> _flattenVisibleContent(InlineSpan span) {
   if (span is WidgetSpan) {
@@ -125,14 +128,26 @@ class MarkdownViewer extends StatelessWidget {
       baseStyle: fontStyle,
     );
 
+    final mermaidData = normalizeMermaidBlocks(data);
+    final processedData = normalizeMarkdownForParsing(mermaidData);
+
+    final providers = extractMermaidImageProviders(mermaidData);
+    if (providers.isNotEmpty && !Platform.environment.containsKey('FLUTTER_TEST')) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        for (final provider in providers) {
+          precacheImage(provider, context);
+        }
+      });
+    }
+
     return MarkdownWidget(
-      data: normalizeMarkdownForParsing(data),
+      data: processedData,
       padding: const EdgeInsets.all(24),
       selectable: true,
       config: config,
       markdownGenerator: MarkdownGenerator(
-        generators: [latexGenerator],
-        inlineSyntaxList: [LatexSyntax()],
+        generators: [latexGenerator, mermaidGenerator],
+        inlineSyntaxList: [LatexSyntax(), MermaidSyntax()],
         richTextBuilder: _buildMarkdownBlock,
       ),
     );
