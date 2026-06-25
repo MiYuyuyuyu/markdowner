@@ -11,6 +11,9 @@ class SettingsProvider extends ChangeNotifier {
   SettingsProvider(this._storageService) {
     _isDarkMode = _storageService.isDarkMode();
     _fontSize = _storageService.getFontSize();
+    final session = _storageService.getReadingSession();
+    _showSidebar = session.showSidebar;
+    _showToc = session.showToc;
   }
 
   bool get isDarkMode => _isDarkMode;
@@ -36,16 +39,19 @@ class SettingsProvider extends ChangeNotifier {
 
   void toggleSidebar() {
     _showSidebar = !_showSidebar;
+    _storageService.updateReadingSessionUiState(showSidebar: _showSidebar);
     notifyListeners();
   }
 
   void toggleToc() {
     _showToc = !_showToc;
+    _storageService.updateReadingSessionUiState(showToc: _showToc);
     notifyListeners();
   }
 
   void closeToc() {
     _showToc = false;
+    _storageService.updateReadingSessionUiState(showToc: _showToc);
     notifyListeners();
   }
 }

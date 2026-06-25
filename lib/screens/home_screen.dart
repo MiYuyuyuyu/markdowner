@@ -314,6 +314,9 @@ class _ContentArea extends StatelessWidget {
       data: data,
       preprocessed: true,
       initialScrollOffset: activeTab.scrollOffset,
+      onScrollChanged: (offset) {
+        tabManager.updateScrollOffset(tabManager.activeIndex, offset);
+      },
       tocController: tocController,
     );
   }

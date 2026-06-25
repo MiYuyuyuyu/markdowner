@@ -1,9 +1,13 @@
+import 'dart:convert';
+
+import '../models/reading_session.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class StorageService {
   static const _recentFilesKey = 'recent_files';
   static const _themeModeKey = 'theme_mode';
   static const _fontSizeKey = 'font_size';
+  static const _readingSessionKey = 'reading_session';
   static const _maxRecentFiles = 20;
 
   final SharedPreferences _prefs;
@@ -37,6 +41,44 @@ class StorageService {
 
   Future<void> clearRecentFiles() async {
     await _prefs.remove(_recentFilesKey);
+  }
+
+  ReadingSession getReadingSession() {
+    final raw = _prefs.getString(_readingSessionKey);
+    if (raw == null || raw.isEmpty) {
+      return const ReadingSession();
+    }
+
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) {
+        return ReadingSession.fromJson(decoded);
+      }
+      return const ReadingSession();
+    } catch (_) {
+      return const ReadingSession();
+    }
+  }
+
+  Future<void> saveReadingSession(ReadingSession session) async {
+    await _prefs.setString(_readingSessionKey, jsonEncode(session.toJson()));
+  }
+
+  Future<void> updateReadingSessionUiState({
+    bool? showSidebar,
+    bool? showToc,
+  }) async {
+    final current = getReadingSession();
+    await saveReadingSession(ReadingSession(
+      openTabs: current.openTabs,
+      activePath: current.activePath,
+      showSidebar: showSidebar ?? current.showSidebar,
+      showToc: showToc ?? current.showToc,
+    ));
+  }
+
+  Future<void> clearReadingSession() async {
+    await _prefs.remove(_readingSessionKey);
   }
 
   bool isDarkMode() {

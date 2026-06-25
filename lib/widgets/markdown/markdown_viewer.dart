@@ -102,7 +102,7 @@ MarkdownConfig _buildMarkdownConfig({
   );
 }
 
-class MarkdownViewer extends StatelessWidget {
+class MarkdownViewer extends StatefulWidget {
   final String data;
   final bool preprocessed;
   final double initialScrollOffset;
@@ -119,6 +119,73 @@ class MarkdownViewer extends StatelessWidget {
   });
 
   @override
+  State<MarkdownViewer> createState() => _MarkdownViewerState();
+}
+
+class _MarkdownViewerState extends State<MarkdownViewer> {
+  final _scrollHostKey = GlobalKey();
+  bool _initialOffsetRestored = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _restoreInitialOffset();
+    });
+  }
+
+  @override
+  void didUpdateWidget(MarkdownViewer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.data != widget.data) {
+      _initialOffsetRestored = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _restoreInitialOffset();
+      });
+    }
+  }
+
+  void _restoreInitialOffset() {
+    if (!mounted || _initialOffsetRestored || widget.initialScrollOffset <= 0) {
+      return;
+    }
+    final position = _findScrollablePosition(_scrollHostKey.currentContext);
+    if (position == null || !position.hasPixels || position.maxScrollExtent <= 0) {
+      return;
+    }
+    _initialOffsetRestored = true;
+    position.jumpTo(widget.initialScrollOffset.clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    ));
+  }
+
+  ScrollPosition? _findScrollablePosition(BuildContext? context) {
+    if (context == null) return null;
+    ScrollPosition? result;
+
+    void visitor(Element element) {
+      if (result != null) return;
+      if (element.widget is Scrollable) {
+        final state = (element as StatefulElement).state;
+        if (state is ScrollableState) {
+          result = state.position;
+          return;
+        }
+      }
+      element.visitChildElements(visitor);
+    }
+
+    (context as Element).visitChildElements(visitor);
+    return result;
+  }
+
+  bool _handleScrollNotification(ScrollNotification notification) {
+    widget.onScrollChanged?.call(notification.metrics.pixels);
+    return false;
+  }
+
+  @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final settings = context.watch<SettingsProvider>();
@@ -132,8 +199,8 @@ class MarkdownViewer extends StatelessWidget {
       baseStyle: fontStyle,
     );
 
-    final mermaidData = preprocessed ? data : normalizeMermaidBlocks(data);
-    final processedData = preprocessed ? data : normalizeMarkdownForParsing(mermaidData);
+    final mermaidData = widget.preprocessed ? widget.data : normalizeMermaidBlocks(widget.data);
+    final processedData = widget.preprocessed ? widget.data : normalizeMarkdownForParsing(mermaidData);
 
     final providers = extractMermaidImageProviders(mermaidData);
     if (providers.isNotEmpty && !Platform.environment.containsKey('FLUTTER_TEST')) {
@@ -144,16 +211,22 @@ class MarkdownViewer extends StatelessWidget {
       });
     }
 
-    return MarkdownWidget(
-      data: processedData,
-      padding: const EdgeInsets.all(24),
-      selectable: true,
-      config: config,
-      tocController: tocController,
-      markdownGenerator: MarkdownGenerator(
-        generators: [latexGenerator, mermaidGenerator],
-        inlineSyntaxList: [LatexSyntax(), MermaidSyntax()],
-        richTextBuilder: _buildMarkdownBlock,
+    return NotificationListener<ScrollNotification>(
+      onNotification: _handleScrollNotification,
+      child: KeyedSubtree(
+        key: _scrollHostKey,
+        child: MarkdownWidget(
+          data: processedData,
+          padding: const EdgeInsets.all(24),
+          selectable: true,
+          config: config,
+          tocController: widget.tocController,
+          markdownGenerator: MarkdownGenerator(
+            generators: [latexGenerator, mermaidGenerator],
+            inlineSyntaxList: [LatexSyntax(), MermaidSyntax()],
+            richTextBuilder: _buildMarkdownBlock,
+          ),
+        ),
       ),
     );
   }

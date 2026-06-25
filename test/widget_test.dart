@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
+import 'package:markdown_app/models/reading_session.dart';
 import 'package:markdown_app/theme/app_theme.dart';
 import 'package:markdown_app/providers/settings_provider.dart';
 import 'package:markdown_app/widgets/markdown/markdown_viewer.dart';
@@ -33,6 +36,68 @@ double? _findFontSizeForText(InlineSpan span, String text) {
 
 void main() {
   VisibilityDetectorController.instance.updateInterval = Duration.zero;
+
+  test('StorageService saves and restores reading session', () async {
+    SharedPreferences.setMockInitialValues({});
+    final storageService = await StorageService.init();
+
+    await storageService.saveReadingSession(
+      const ReadingSession(
+        openTabs: [
+          ReadingSessionTab(path: 'D:\\notes\\a.md', scrollOffset: 120),
+          ReadingSessionTab(path: 'D:\\notes\\b.md', scrollOffset: 360),
+        ],
+        activePath: 'D:\\notes\\b.md',
+        showSidebar: false,
+        showToc: true,
+      ),
+    );
+
+    final session = storageService.getReadingSession();
+
+    expect(session.openTabs, hasLength(2));
+    expect(session.openTabs[0].path, 'D:\\notes\\a.md');
+    expect(session.openTabs[0].scrollOffset, 120);
+    expect(session.activePath, 'D:\\notes\\b.md');
+    expect(session.showSidebar, isFalse);
+    expect(session.showToc, isTrue);
+  });
+
+  test('TabManager restores session and removes unreadable recent files', () async {
+    final tempDir = await Directory.systemTemp.createTemp('markdown_app_test_');
+    addTearDown(() async {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+    final validFile = File('${tempDir.path}${Platform.pathSeparator}valid.md');
+    final missingPath = '${tempDir.path}${Platform.pathSeparator}missing.md';
+    await validFile.writeAsString('# Valid');
+
+    SharedPreferences.setMockInitialValues({});
+    final storageService = await StorageService.init();
+    await storageService.addRecentFile(validFile.path);
+    await storageService.addRecentFile(missingPath);
+    await storageService.saveReadingSession(
+      ReadingSession(
+        openTabs: [
+          ReadingSessionTab(path: missingPath, scrollOffset: 100),
+          ReadingSessionTab(path: validFile.path, scrollOffset: 240),
+        ],
+        activePath: validFile.path,
+        showSidebar: true,
+        showToc: false,
+      ),
+    );
+
+    final tabManager = TabManager(FileService(), storageService);
+    await tabManager.restoreSession();
+
+    expect(tabManager.tabs, hasLength(1));
+    expect(tabManager.activeTab?.filePath, validFile.path);
+    expect(tabManager.activeTab?.scrollOffset, 240);
+    expect(storageService.getRecentFiles(), isNot(contains(missingPath)));
+  });
 
   testWidgets('WelcomePage shows title and open button', (tester) async {
     SharedPreferences.setMockInitialValues({});
@@ -391,6 +456,62 @@ graph TD
     await tester.pumpAndSettle();
 
     expect(scrollableState.position.pixels, greaterThan(0));
+  });
+
+  testWidgets('MarkdownViewer reports scroll changes', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final storageService = await StorageService.init();
+    final filler = List.filled(80, '正文内容').join('\n\n');
+    double? reportedOffset;
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(
+            create: (_) => SettingsProvider(storageService),
+          ),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: MarkdownViewer(
+              data: '# 开头\n\n$filler',
+              onScrollChanged: (offset) {
+                reportedOffset = offset;
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -400));
+    await tester.pumpAndSettle();
+
+    expect(reportedOffset, isNotNull);
+    expect(reportedOffset!, greaterThan(0));
+  });
+
+  test('TabManager removes a recent file entry without deleting file', () async {
+    final tempDir = await Directory.systemTemp.createTemp('markdown_app_recent_');
+    try {
+    final file = File('${tempDir.path}${Platform.pathSeparator}recent.md');
+    await file.writeAsString('# Recent');
+
+    SharedPreferences.setMockInitialValues({});
+    final storageService = await StorageService.init();
+    await storageService.addRecentFile(file.path);
+    final tabManager = TabManager(FileService(), storageService);
+
+    await tabManager.removeRecentFile(file.path);
+
+    expect(storageService.getRecentFiles(), isEmpty);
+    expect(await file.exists(), isTrue);
+    } finally {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    }
   });
 
   testWidgets('TocPanel still scrolls after switching markdown documents', (

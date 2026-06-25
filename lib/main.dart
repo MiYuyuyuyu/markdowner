@@ -10,6 +10,8 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final storageService = await StorageService.init();
   final fileService = FileService();
+  final tabManager = TabManager(fileService, storageService);
+  await tabManager.restoreSession();
 
   runApp(
     MultiProvider(
@@ -17,9 +19,7 @@ void main() async {
         Provider<StorageService>.value(value: storageService),
         Provider<FileService>.value(value: fileService),
         ChangeNotifierProvider(create: (_) => SettingsProvider(storageService)),
-        ChangeNotifierProvider(
-          create: (_) => TabManager(fileService, storageService),
-        ),
+        ChangeNotifierProvider.value(value: tabManager),
       ],
       child: const MarkdownReaderApp(),
     ),

@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../models/reading_session.dart';
 import '../models/tab_item.dart';
 import '../services/file_service.dart';
 import '../services/storage_service.dart';
@@ -18,6 +19,39 @@ class TabManager extends ChangeNotifier {
   TabItem? get activeTab => _activeIndex >= 0 && _activeIndex < _tabs.length
       ? _tabs[_activeIndex]
       : null;
+
+  Future<void> restoreSession() async {
+    final session = _storageService.getReadingSession();
+    _tabs.clear();
+    _activeIndex = -1;
+
+    for (final savedTab in session.openTabs) {
+      try {
+        final content = await _fileService.readFile(savedTab.path);
+        final fileName = _fileService.extractFileName(savedTab.path);
+        _tabs.add(TabItem(
+          id: savedTab.path,
+          title: fileName,
+          filePath: savedTab.path,
+          content: content,
+          scrollOffset: savedTab.scrollOffset,
+        ));
+      } catch (_) {
+        await _storageService.removeRecentFile(savedTab.path);
+      }
+    }
+
+    if (_tabs.isNotEmpty) {
+      final activePath = session.activePath;
+      final activeIndex = activePath == null
+          ? -1
+          : _tabs.indexWhere((tab) => tab.filePath == activePath);
+      _activeIndex = activeIndex >= 0 ? activeIndex : 0;
+    }
+
+    await _saveSession();
+    notifyListeners();
+  }
 
   Future<void> openFilePicker() async {
     final file = await _fileService.pickMarkdownFile();
@@ -45,9 +79,11 @@ class TabManager extends ChangeNotifier {
       _tabs.add(tab);
       _activeIndex = _tabs.length - 1;
       await _storageService.addRecentFile(path);
+      await _saveSession();
       notifyListeners();
     } catch (e) {
       debugPrint('Failed to open file: $e');
+      await _storageService.removeRecentFile(path);
     }
   }
 
@@ -61,6 +97,7 @@ class TabManager extends ChangeNotifier {
     } else if (_activeIndex > index) {
       _activeIndex--;
     }
+    _saveSession();
     notifyListeners();
   }
 
@@ -70,18 +107,21 @@ class TabManager extends ChangeNotifier {
     _tabs.clear();
     _tabs.add(kept);
     _activeIndex = 0;
+    _saveSession();
     notifyListeners();
   }
 
   void closeAllTabs() {
     _tabs.clear();
     _activeIndex = -1;
+    _saveSession();
     notifyListeners();
   }
 
   void setActiveTab(int index) {
     if (index >= 0 && index < _tabs.length && index != _activeIndex) {
       _activeIndex = index;
+      _saveSession();
       notifyListeners();
     }
   }
@@ -99,12 +139,36 @@ class TabManager extends ChangeNotifier {
     } else if (_activeIndex < oldIndex && _activeIndex >= newIndex) {
       _activeIndex++;
     }
+    _saveSession();
     notifyListeners();
   }
 
   void updateScrollOffset(int index, double offset) {
     if (index >= 0 && index < _tabs.length) {
       _tabs[index].scrollOffset = offset;
+      _saveSession();
     }
+  }
+
+  Future<void> removeRecentFile(String path) async {
+    await _storageService.removeRecentFile(path);
+    notifyListeners();
+  }
+
+  Future<void> _saveSession({bool? showSidebar, bool? showToc}) {
+    return _storageService.saveReadingSession(
+      ReadingSession(
+        openTabs: _tabs
+            .where((tab) => tab.filePath != null)
+            .map((tab) => ReadingSessionTab(
+                  path: tab.filePath!,
+                  scrollOffset: tab.scrollOffset,
+                ))
+            .toList(),
+        activePath: activeTab?.filePath,
+        showSidebar: showSidebar ?? _storageService.getReadingSession().showSidebar,
+        showToc: showToc ?? _storageService.getReadingSession().showToc,
+      ),
+    );
   }
 }

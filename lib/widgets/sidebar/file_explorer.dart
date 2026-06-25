@@ -183,6 +183,18 @@ class _RecentFileItem extends StatelessWidget {
                 ],
               ),
             ),
+            IconButton(
+              tooltip: '移除最近文件',
+              icon: Icon(
+                Icons.close,
+                size: 16,
+                color: colorScheme.onSurfaceVariant,
+              ),
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+              onPressed: () => _removeRecentFile(context),
+            ),
           ],
         ),
       ),
@@ -191,5 +203,9 @@ class _RecentFileItem extends StatelessWidget {
 
   void _openFile(BuildContext context) {
     context.read<TabManager>().openFileFromPath(path);
+  }
+
+  Future<void> _removeRecentFile(BuildContext context) async {
+    await context.read<TabManager>().removeRecentFile(path);
   }
 }
