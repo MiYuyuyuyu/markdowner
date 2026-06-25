@@ -21,13 +21,39 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final _tocController = TocController();
+  final _tocControllers = <String, TocController>{};
+
+  TocController? _tocControllerForActiveTab(TabManager tabManager) {
+    final activeTab = tabManager.activeTab;
+    if (activeTab == null) return null;
+    return _tocControllers.putIfAbsent(activeTab.id, TocController.new);
+  }
+
+  void _disposeClosedTabControllers(TabManager tabManager) {
+    final openTabIds = tabManager.tabs.map((tab) => tab.id).toSet();
+    final closedTabIds = _tocControllers.keys
+        .where((tabId) => !openTabIds.contains(tabId))
+        .toList();
+    for (final tabId in closedTabIds) {
+      _tocControllers.remove(tabId)?.dispose();
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final controller in _tocControllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final isWide = MediaQuery.of(context).size.width > _sidebarBreakpoint;
     final tabManager = context.watch<TabManager>();
     final settings = context.watch<SettingsProvider>();
+    _disposeClosedTabControllers(tabManager);
+    final tocController = _tocControllerForActiveTab(tabManager);
     final rawData = tabManager.activeTab?.content ?? '';
     final processedData = preprocessMarkdownData(rawData);
 
@@ -41,10 +67,10 @@ class _HomeScreenState extends State<HomeScreen> {
           endDrawer: isWide || !settings.showToc
               ? null
               : _TocDrawer(
-                  tocController: _tocController,
+                  tocController: tocController!,
                   markdownData: processedData,
                 ),
-          body: _buildBody(context, isWide, processedData),
+          body: _buildBody(context, isWide, processedData, tocController),
         ),
       ),
     );
@@ -127,22 +153,28 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildBody(BuildContext context, bool isWide, String data) {
+  Widget _buildBody(
+    BuildContext context,
+    bool isWide,
+    String data,
+    TocController? tocController,
+  ) {
     final settings = context.watch<SettingsProvider>();
     final tabManager = context.watch<TabManager>();
 
     return Row(
       children: [
         if (isWide && settings.showSidebar) const FileExplorer(),
-        if (isWide && settings.showToc && tabManager.activeTab != null)
+        if (isWide && settings.showToc && tocController != null)
           TocPanel(
-            tocController: _tocController,
+            key: ValueKey('toc-${tabManager.activeTab!.id}'),
+            tocController: tocController,
             markdownData: data,
             onClose: settings.closeToc,
           ),
         Expanded(
           child: _ContentArea(
-            tocController: _tocController,
+            tocController: tocController,
             data: data,
           ),
         ),
@@ -255,7 +287,7 @@ class _FontSizeControls extends StatelessWidget {
 }
 
 class _ContentArea extends StatelessWidget {
-  final TocController tocController;
+  final TocController? tocController;
   final String data;
 
   const _ContentArea({required this.tocController, required this.data});

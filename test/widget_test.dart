@@ -12,6 +12,7 @@ import 'package:markdown_app/services/file_service.dart';
 import 'package:markdown_app/services/storage_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:visibility_detector/visibility_detector.dart';
+import 'package:markdown_widget/markdown_widget.dart';
 
 double? _findFontSizeForText(InlineSpan span, String text) {
   if (span is TextSpan) {
@@ -345,6 +346,106 @@ graph TD
     );
 
     expect(find.byType(Image), findsOneWidget);
+  });
+
+  testWidgets('TocPanel scrolls MarkdownViewer when a heading is tapped', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final storageService = await StorageService.init();
+    final tocController = TocController();
+    final filler = List.filled(40, '正文内容').join('\n\n');
+    final markdown = '# 开头\n\n$filler\n\n## 目标标题\n\n目标内容';
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(
+            create: (_) => SettingsProvider(storageService),
+          ),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: Row(
+              children: [
+                TocPanel(markdownData: markdown, tocController: tocController),
+                Expanded(
+                  child: MarkdownViewer(
+                    data: markdown,
+                    tocController: tocController,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final markdownScrollable = find.byType(Scrollable).last;
+    final scrollableState = tester.state<ScrollableState>(markdownScrollable);
+    expect(scrollableState.position.pixels, 0);
+
+    await tester.tap(find.text('目标标题').first);
+    await tester.pumpAndSettle();
+
+    expect(scrollableState.position.pixels, greaterThan(0));
+  });
+
+  testWidgets('TocPanel still scrolls after switching markdown documents', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final storageService = await StorageService.init();
+    final filler = List.filled(40, '正文内容').join('\n\n');
+    final firstMarkdown = '# 第一篇\n\n$filler\n\n## 第一目标\n\n目标内容';
+    final secondMarkdown = '# 第二篇\n\n$filler\n\n## 第二目标\n\n目标内容';
+
+    Future<void> pumpMarkdown(String markdown, TocController tocController) async {
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider(
+              create: (_) => SettingsProvider(storageService),
+            ),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: Row(
+                children: [
+                  TocPanel(
+                    key: ValueKey('toc-$markdown'),
+                    markdownData: markdown,
+                    tocController: tocController,
+                  ),
+                  Expanded(
+                    child: MarkdownViewer(
+                      key: ValueKey(markdown),
+                      data: markdown,
+                      tocController: tocController,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await pumpMarkdown(firstMarkdown, TocController());
+    await pumpMarkdown(secondMarkdown, TocController());
+
+    final markdownScrollable = find.byType(Scrollable).last;
+    final scrollableState = tester.state<ScrollableState>(markdownScrollable);
+    expect(scrollableState.position.pixels, 0);
+
+    await tester.tap(find.text('第二目标').first);
+    await tester.pumpAndSettle();
+
+    expect(scrollableState.position.pixels, greaterThan(0));
   });
 
   test('parseHeadings extracts levels and titles from markdown', () {
