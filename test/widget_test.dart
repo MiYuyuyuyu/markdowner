@@ -369,4 +369,23 @@ graph TD
     expect(headings[5].level, 6);
     expect(headings[5].title, '六级标题');
   });
+
+  test('parseHeadings ignores headings inside fenced code blocks', () {
+    const data = r'''
+# 正文标题
+
+```dart
+# 代码块里的伪标题
+```
+
+## 下一个正文标题
+''';
+
+    final headings = parseHeadings(data);
+
+    expect(headings.map((heading) => heading.title), [
+      '正文标题',
+      '下一个正文标题',
+    ]);
+  });
 }

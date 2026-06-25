@@ -14,19 +14,25 @@ class HeadingItem {
 }
 
 final _headingRegex = RegExp(r'^(#{1,6})\s+(.+)$', multiLine: true);
+final _fencedCodeBlockRegex = RegExp(r'^\s*(```|~~~)');
 
 List<HeadingItem> parseHeadings(String markdown) {
   final headings = <HeadingItem>[];
   var lineIndex = 0;
+  var inFencedCodeBlock = false;
 
   for (final line in markdown.split('\n')) {
-    final match = _headingRegex.firstMatch(line);
-    if (match != null) {
-      headings.add(HeadingItem(
-        level: match.group(1)!.length,
-        title: match.group(2)!.trim(),
-        lineIndex: lineIndex,
-      ));
+    if (_fencedCodeBlockRegex.hasMatch(line)) {
+      inFencedCodeBlock = !inFencedCodeBlock;
+    } else if (!inFencedCodeBlock) {
+      final match = _headingRegex.firstMatch(line);
+      if (match != null) {
+        headings.add(HeadingItem(
+          level: match.group(1)!.length,
+          title: match.group(2)!.trim(),
+          lineIndex: lineIndex,
+        ));
+      }
     }
     lineIndex++;
   }
@@ -132,6 +138,11 @@ class _TocPanelState extends State<TocPanel> {
           ),
         ),
       );
+    }
+
+    final tocController = widget.tocController;
+    if (tocController != null) {
+      return TocWidget(controller: tocController);
     }
 
     return ListView.builder(
