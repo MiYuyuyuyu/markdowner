@@ -7,8 +7,14 @@ class ReadingSessionTab {
   factory ReadingSessionTab.fromJson(Map<String, dynamic> json) {
     return ReadingSessionTab(
       path: json['path'] as String? ?? '',
-      scrollOffset: (json['scrollOffset'] as num?)?.toDouble() ?? 0,
+      scrollOffset: _parseOffset(json['scrollOffset']),
     );
+  }
+
+  static double _parseOffset(Object? value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value) ?? 0;
+    return 0;
   }
 
   Map<String, dynamic> toJson() => {
@@ -31,21 +37,36 @@ class ReadingSession {
   });
 
   factory ReadingSession.fromJson(Map<String, dynamic> json) {
+    // 单个字段/标签损坏时只丢弃该部分,不能让整个会话(所有打开的标签)丢失
     final tabsJson = json['openTabs'];
+    final tabs = <ReadingSessionTab>[];
+    if (tabsJson is List) {
+      for (final tab in tabsJson) {
+        if (tab is! Map) continue;
+        try {
+          final parsed = ReadingSessionTab.fromJson(
+            Map<String, dynamic>.from(tab),
+          );
+          if (parsed.path.isNotEmpty) tabs.add(parsed);
+        } catch (_) {
+          // 跳过损坏的标签
+        }
+      }
+    }
+    final activePath = json['activePath'];
     return ReadingSession(
-      openTabs: tabsJson is List
-          ? tabsJson
-              .whereType<Map>()
-              .map((tab) => ReadingSessionTab.fromJson(
-                    Map<String, dynamic>.from(tab),
-                  ))
-              .where((tab) => tab.path.isNotEmpty)
-              .toList()
-          : const [],
-      activePath: json['activePath'] as String?,
-      showSidebar: json['showSidebar'] as bool? ?? true,
-      showToc: json['showToc'] as bool? ?? false,
+      openTabs: tabs,
+      activePath: activePath is String ? activePath : null,
+      showSidebar: _parseBool(json['showSidebar'], fallback: true),
+      showToc: _parseBool(json['showToc'], fallback: false),
     );
+  }
+
+  static bool _parseBool(Object? value, {required bool fallback}) {
+    if (value is bool) return value;
+    if (value is String) return bool.tryParse(value) ?? fallback;
+    if (value is num) return value != 0;
+    return fallback;
   }
 
   Map<String, dynamic> toJson() => {

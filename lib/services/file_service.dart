@@ -31,6 +31,12 @@ class FileService {
   }
 
   String extractFileName(String path) {
-    return path.split(Platform.pathSeparator).last;
+    // 同时兼容正斜杠与反斜杠(拖拽/命令行传入的路径可能是 /)
+    final normalized = path.replaceAll('\\', '/');
+    final segments = normalized.split('/');
+    return segments.lastWhere(
+      (segment) => segment.isNotEmpty,
+      orElse: () => path,
+    );
   }
 }

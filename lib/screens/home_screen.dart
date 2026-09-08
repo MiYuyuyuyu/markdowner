@@ -66,10 +66,12 @@ class _HomeScreenState extends State<HomeScreen> {
           drawer: isWide ? null : const _DrawerSidebar(),
           endDrawer: isWide || !settings.showToc
               ? null
-              : _TocDrawer(
-                  tocController: tocController!,
-                  markdownData: processedData,
-                ),
+              : (tocController == null
+                  ? null
+                  : _TocDrawer(
+                      tocController: tocController,
+                      markdownData: processedData,
+                    )),
           body: _buildBody(context, isWide, processedData, tocController),
         ),
       ),
@@ -89,10 +91,20 @@ class _HomeScreenState extends State<HomeScreen> {
           tabManager.closeTab(tabManager.activeIndex);
         }
       },
+      // Windows 上 "+" 需要 Shift(即 Ctrl+Shift+=),小键盘加减号是独立按键
       const SingleActivator(LogicalKeyboardKey.equal, control: true): () {
         settings.increaseFontSize();
       },
+      const SingleActivator(LogicalKeyboardKey.equal, control: true, shift: true): () {
+        settings.increaseFontSize();
+      },
+      const SingleActivator(LogicalKeyboardKey.numpadAdd, control: true): () {
+        settings.increaseFontSize();
+      },
       const SingleActivator(LogicalKeyboardKey.minus, control: true): () {
+        settings.decreaseFontSize();
+      },
+      const SingleActivator(LogicalKeyboardKey.numpadSubtract, control: true): () {
         settings.decreaseFontSize();
       },
     };

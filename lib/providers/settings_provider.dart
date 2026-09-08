@@ -10,7 +10,10 @@ class SettingsProvider extends ChangeNotifier {
 
   SettingsProvider(this._storageService) {
     _isDarkMode = _storageService.isDarkMode();
-    _fontSize = _storageService.getFontSize();
+    final storedFontSize = _storageService.getFontSize();
+    _fontSize = storedFontSize.isNaN || storedFontSize.isInfinite
+        ? 16.0
+        : storedFontSize.clamp(12.0, 32.0);
     final session = _storageService.getReadingSession();
     _showSidebar = session.showSidebar;
     _showToc = session.showToc;

@@ -13,25 +13,60 @@ class HeadingItem {
   });
 }
 
-final _headingRegex = RegExp(r'^(#{1,6})\s+(.+)$', multiLine: true);
-final _fencedCodeBlockRegex = RegExp(r'^\s*(```|~~~)');
+final _headingRegex = RegExp(r'^ {0,3}(#{1,6})\s+(.+)$');
+final _fenceOpenerRegex = RegExp(r'^ {0,3}(`{3,}|~{3,})');
+
+String? _fenceOpenerOf(String line) {
+  final match = _fenceOpenerRegex.firstMatch(line);
+  if (match == null) return null;
+  final run = match.group(1)!;
+  // 同一行出现闭合围栏符(如行内 ```code```)不是围栏开头
+  if (line.substring(match.end).contains(run[0] * 3)) return null;
+  return run;
+}
+
+bool _isFenceClose(String line, String opener) {
+  final trimmed = line.trim();
+  if (trimmed.length < opener.length) return false;
+  final char = opener[0];
+  for (final unit in trimmed.codeUnits) {
+    if (unit != char.codeUnitAt(0)) return false;
+  }
+  return true;
+}
+
+/// 去掉 blockquote 前缀(如 "> > # 标题"),让目录与真实渲染结果一致。
+/// 非 blockquote 行原样返回,保留前导空格供缩进判断。
+String _stripBlockquote(String line) {
+  var content = line;
+  while (content.trimLeft().startsWith('>')) {
+    content = content.substring(content.indexOf('>') + 1);
+    if (content.startsWith(' ')) content = content.substring(1);
+  }
+  return content;
+}
 
 List<HeadingItem> parseHeadings(String markdown) {
   final headings = <HeadingItem>[];
   var lineIndex = 0;
-  var inFencedCodeBlock = false;
+  String? fenceOpener;
 
   for (final line in markdown.split('\n')) {
-    if (_fencedCodeBlockRegex.hasMatch(line)) {
-      inFencedCodeBlock = !inFencedCodeBlock;
-    } else if (!inFencedCodeBlock) {
-      final match = _headingRegex.firstMatch(line);
-      if (match != null) {
-        headings.add(HeadingItem(
-          level: match.group(1)!.length,
-          title: match.group(2)!.trim(),
-          lineIndex: lineIndex,
-        ));
+    if (fenceOpener != null) {
+      if (_isFenceClose(line, fenceOpener)) fenceOpener = null;
+    } else {
+      final opener = _fenceOpenerOf(line);
+      if (opener != null) {
+        fenceOpener = opener;
+      } else {
+        final match = _headingRegex.firstMatch(_stripBlockquote(line));
+        if (match != null) {
+          headings.add(HeadingItem(
+            level: match.group(1)!.length,
+            title: match.group(2)!.trim(),
+            lineIndex: lineIndex,
+          ));
+        }
       }
     }
     lineIndex++;

@@ -181,7 +181,11 @@ class _MarkdownViewerState extends State<MarkdownViewer> {
   }
 
   bool _handleScrollNotification(ScrollNotification notification) {
-    widget.onScrollChanged?.call(notification.metrics.pixels);
+    // 只统计最外层的纵向滚动;行内公式等嵌套横向滚动的通知(depth > 0)
+    // 不能写入阅读进度,否则横向拖动公式会污染纵向位置。
+    if (notification.depth == 0) {
+      widget.onScrollChanged?.call(notification.metrics.pixels);
+    }
     return false;
   }
 

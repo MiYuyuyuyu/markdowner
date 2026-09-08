@@ -15,6 +15,10 @@ class TabItem {
 
   bool get isUnsaved => filePath == null;
 
-  String get displayTitle =>
-      title.length > 24 ? '${title.substring(0, 21)}...' : title;
+  String get displayTitle {
+    if (title.length <= 24) return title;
+    // 按字符(而非 UTF-16 码元)截断,避免切断 emoji 等代理对
+    final chars = String.fromCharCodes(title.runes.take(21));
+    return '$chars...';
+  }
 }

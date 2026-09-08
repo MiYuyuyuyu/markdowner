@@ -16,7 +16,8 @@ SpanNodeGeneratorWithTag latexGenerator = SpanNodeGeneratorWithTag(
 );
 
 class LatexSyntax extends md.InlineSyntax {
-  LatexSyntax() : super(r'(\$\$[^\$]+\$\$)|(\$[^\$]+\$)');
+  // 行内公式不允许跨行:否则相邻行的普通文本(如含货币符号的行)会被吞进同一个坏公式。
+  LatexSyntax() : super(r'(\$\$[^$]+\$\$)|(\$[^$\n]+\$)');
 
   @override
   bool onMatch(md.InlineParser parser, Match match) {
@@ -57,10 +58,14 @@ class LatexNode extends SpanNode {
       '|',
     );
     final isInline = attributes['isInline'] == 'true';
-    final style = parentStyle ?? config.p.textStyle;
+    // 紧凑列表/引用块等场景没有 p 节点,parentStyle 是 fontSize 为 null 的空样式,
+    // 必须以用户正文字号兜底,否则 Math.tex 会回退到固定的默认字号。
+    final style = config.p.textStyle.merge(parentStyle);
+    // textContent 是未还原管道 token 的原始文本,展示前必须还原
+    final displayText = textContent.replaceAll(latexPipeToken, '|');
 
     if (content.isEmpty) {
-      return TextSpan(style: style, text: textContent);
+      return TextSpan(style: style, text: displayText);
     }
 
     final latex = Math.tex(
@@ -69,7 +74,7 @@ class LatexNode extends SpanNode {
       textStyle: style,
       textScaleFactor: isInline ? _inlineMathScaleFactor : 1,
       onErrorFallback: (error) {
-        return Text(textContent, style: style.copyWith(color: Colors.red));
+        return Text(displayText, style: style.copyWith(color: Colors.red));
       },
     );
 

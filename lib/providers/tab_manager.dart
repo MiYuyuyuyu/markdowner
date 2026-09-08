@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import '../models/reading_session.dart';
 import '../models/tab_item.dart';
@@ -9,6 +11,7 @@ class TabManager extends ChangeNotifier {
   final StorageService _storageService;
   final List<TabItem> _tabs = [];
   int _activeIndex = -1;
+  static int _idCounter = 0;
 
   TabManager(this._fileService, this._storageService);
 
@@ -37,7 +40,10 @@ class TabManager extends ChangeNotifier {
           scrollOffset: savedTab.scrollOffset,
         ));
       } catch (_) {
-        await _storageService.removeRecentFile(savedTab.path);
+        // 文件已不存在才移出最近列表;临时性错误(编码不支持、盘未挂载等)不破坏记录
+        if (!_fileExists(savedTab.path)) {
+          await _storageService.removeRecentFile(savedTab.path);
+        }
       }
     }
 
@@ -71,7 +77,7 @@ class TabManager extends ChangeNotifier {
       final content = await _fileService.readFile(path);
       final fileName = _fileService.extractFileName(path);
       final tab = TabItem(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        id: '${DateTime.now().millisecondsSinceEpoch}-${_idCounter++}',
         title: fileName,
         filePath: path,
         content: content,
@@ -83,7 +89,18 @@ class TabManager extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       debugPrint('Failed to open file: $e');
-      await _storageService.removeRecentFile(path);
+      // 文件仍存在时(编码不支持、被占用等)不应移出最近列表
+      if (!_fileExists(path)) {
+        await _storageService.removeRecentFile(path);
+      }
+    }
+  }
+
+  bool _fileExists(String path) {
+    try {
+      return File(path).existsSync();
+    } catch (_) {
+      return false;
     }
   }
 

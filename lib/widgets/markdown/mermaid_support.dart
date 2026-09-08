@@ -24,10 +24,15 @@ class MermaidSyntax extends md.InlineSyntax {
   }
 }
 
-String mermaidInkUrl(String code) {
-  final decoded = utf8.decode(base64Url.decode(code));
-  final encoded = base64Url.encode(utf8.encode(decoded));
-  return 'https://mermaid.ink/img/$encoded';
+/// 解码失败(如手写的非法标签)时返回 null,由调用方降级处理。
+String? mermaidInkUrl(String code) {
+  try {
+    final decoded = utf8.decode(base64Url.decode(code));
+    final encoded = base64Url.encode(utf8.encode(decoded));
+    return 'https://mermaid.ink/img/$encoded';
+  } on FormatException {
+    return null;
+  }
 }
 
 final _mermaidUrlRegex = RegExp(
@@ -36,10 +41,14 @@ final _mermaidUrlRegex = RegExp(
 );
 
 List<ImageProvider> extractMermaidImageProviders(String processedData) {
-  return _mermaidUrlRegex
-      .allMatches(processedData)
-      .map((m) => NetworkImage(mermaidInkUrl(m.group(1)!)))
-      .toList();
+  final providers = <ImageProvider>[];
+  for (final match in _mermaidUrlRegex.allMatches(processedData)) {
+    final url = mermaidInkUrl(match.group(1)!);
+    if (url != null) {
+      providers.add(NetworkImage(url));
+    }
+  }
+  return providers;
 }
 
 class MermaidNode extends SpanNode {
@@ -54,6 +63,10 @@ class MermaidNode extends SpanNode {
     if (code.isEmpty) return const TextSpan(text: '');
 
     final url = mermaidInkUrl(code);
+    if (url == null) {
+      // 手写的非法 <mermaid> 标签:降级为纯文本,避免渲染崩溃
+      return TextSpan(text: code, style: parentStyle);
+    }
     final style = parentStyle;
 
     return WidgetSpan(

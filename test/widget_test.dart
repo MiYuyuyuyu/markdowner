@@ -1,11 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:markdown_app/models/reading_session.dart';
 import 'package:markdown_app/theme/app_theme.dart';
 import 'package:markdown_app/providers/settings_provider.dart';
+import 'package:markdown_app/screens/home_screen.dart';
 import 'package:markdown_app/widgets/markdown/markdown_viewer.dart';
 import 'package:markdown_app/widgets/welcome/welcome_page.dart';
 import 'package:markdown_app/widgets/navigation/toc_panel.dart';
@@ -323,6 +325,37 @@ void main() {
     expect(mathWidget.textStyle?.fontSize, 28.0);
   });
 
+  testWidgets('MarkdownViewer scales list item math with reader font size', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({'font_size': 28.0});
+    final storageService = await StorageService.init();
+
+    const markdown = r'''
+- $k=0$：$\lambda$ 不是特征根
+''';
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(
+            create: (_) => SettingsProvider(storageService),
+          ),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(body: MarkdownViewer(data: markdown)),
+        ),
+      ),
+    );
+
+    final mathFontSizes = tester
+        .widgetList<Math>(find.byType(Math))
+        .map((math) => math.textStyle?.fontSize)
+        .toSet();
+
+    expect(mathFontSizes, {28.0});
+  });
+
   testWidgets('MarkdownViewer boosts inline math scale for visual consistency', (
     tester,
   ) async {
@@ -609,5 +642,228 @@ graph TD
       '正文标题',
       '下一个正文标题',
     ]);
+  });
+
+  testWidgets('MarkdownViewer keeps adjacent currency lines as plain text', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final storageService = await StorageService.init();
+
+    const markdown = '价格 \$5\n成本 \$10';
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(
+            create: (_) => SettingsProvider(storageService),
+          ),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(body: MarkdownViewer(data: markdown)),
+        ),
+      ),
+    );
+
+    expect(find.byType(Math), findsNothing);
+    expect(find.textContaining('成本'), findsOneWidget);
+  });
+
+  testWidgets('MarkdownViewer does not leak pipe tokens in latex fallback', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final storageService = await StorageService.init();
+
+    const markdown = r'| a | $\foo{|}$ |';
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(
+            create: (_) => SettingsProvider(storageService),
+          ),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(body: MarkdownViewer(data: markdown)),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('@@LATEX_PIPE@@'), findsNothing);
+  });
+
+  testWidgets('MarkdownViewer survives hand-written mermaid tags', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final storageService = await StorageService.init();
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(
+            create: (_) => SettingsProvider(storageService),
+          ),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: MarkdownViewer(data: '前文 <mermaid>方案图</mermaid> 后文'),
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.textContaining('方案图'), findsOneWidget);
+  });
+
+  testWidgets('MarkdownViewer keeps mixed text and block latex content', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final storageService = await StorageService.init();
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(
+            create: (_) => SettingsProvider(storageService),
+          ),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(body: MarkdownViewer(data: r'前文 $$x+1$$ 后文')),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('前文'), findsOneWidget);
+    expect(find.textContaining('后文'), findsOneWidget);
+    expect(find.byType(Math), findsOneWidget);
+  });
+
+  testWidgets('HomeScreen renders without tabs on narrow window with toc', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(600, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    SharedPreferences.setMockInitialValues({});
+    final storageService = await StorageService.init();
+    await storageService.saveReadingSession(const ReadingSession(showToc: true));
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(
+            create: (_) => SettingsProvider(storageService),
+          ),
+          ChangeNotifierProvider(
+            create: (_) => TabManager(FileService(), storageService),
+          ),
+        ],
+        child: const MaterialApp(home: HomeScreen()),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('HomeScreen binds ctrl+shift+= and numpad zoom shortcuts', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final storageService = await StorageService.init();
+    final settings = SettingsProvider(storageService);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          Provider<StorageService>.value(value: storageService),
+          ChangeNotifierProvider<SettingsProvider>.value(value: settings),
+          ChangeNotifierProvider(
+            create: (_) => TabManager(FileService(), storageService),
+          ),
+        ],
+        child: const MaterialApp(home: HomeScreen()),
+      ),
+    );
+
+    final bindings =
+        tester.widget<CallbackShortcuts>(find.byType(CallbackShortcuts))
+            .bindings;
+
+    bool hasActivator(LogicalKeyboardKey trigger, {bool shift = false}) {
+      return bindings.keys.whereType<SingleActivator>().any(
+            (activator) =>
+                activator.trigger == trigger &&
+                activator.control &&
+                activator.shift == shift,
+          );
+    }
+
+    expect(hasActivator(LogicalKeyboardKey.equal, shift: true), isTrue);
+    expect(hasActivator(LogicalKeyboardKey.numpadAdd), isTrue);
+    expect(hasActivator(LogicalKeyboardKey.numpadSubtract), isTrue);
+
+    final zoomInBinding = bindings.entries
+        .singleWhere(
+          (entry) =>
+              entry.key is SingleActivator &&
+              (entry.key as SingleActivator).trigger ==
+                  LogicalKeyboardKey.equal &&
+              (entry.key as SingleActivator).control &&
+              (entry.key as SingleActivator).shift,
+        )
+        .value;
+
+    final before = settings.fontSize;
+    zoomInBinding();
+    expect(settings.fontSize, before + 2);
+  });
+
+  testWidgets('MarkdownViewer ignores horizontal math scroll for progress', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    SharedPreferences.setMockInitialValues({});
+    final storageService = await StorageService.init();
+    final filler = List.filled(60, '正文内容').join('\n\n');
+    final markdown = '公式：\$${List.filled(40, 'x +').join(' ')} x\$ 结束'
+        '\n\n$filler';
+    double? reportedOffset;
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(
+            create: (_) => SettingsProvider(storageService),
+          ),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: MarkdownViewer(
+              data: markdown,
+              onScrollChanged: (offset) => reportedOffset = offset,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.byType(SingleChildScrollView).first,
+        const Offset(-80, 0));
+    await tester.pumpAndSettle();
+    expect(reportedOffset ?? 0, lessThan(1.0));
+
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -300));
+    await tester.pumpAndSettle();
+    expect(reportedOffset, isNotNull);
+    expect(reportedOffset!, greaterThan(0));
   });
 }
