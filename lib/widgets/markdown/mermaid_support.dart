@@ -35,6 +35,33 @@ String? mermaidInkUrl(String code) {
   }
 }
 
+/// 已加载失败的网络图 URL:重建时不再重复发起请求
+/// (拖动面板等频繁重建场景下,失败重试会形成请求风暴)
+final _failedImageUrls = <String>{};
+
+void _markImageFailed(String url) => _failedImageUrls.add(url);
+
+Widget _networkImage(String url, {BoxFit? fit}) {
+  if (_failedImageUrls.contains(url)) {
+    return _brokenImage();
+  }
+  return Image.network(
+    url,
+    fit: fit,
+    errorBuilder: (context, error, stackTrace) {
+      _markImageFailed(url);
+      return _brokenImage();
+    },
+  );
+}
+
+Widget _brokenImage() {
+  return Container(
+    padding: const EdgeInsets.all(16),
+    child: const Text('Mermaid 图表渲染失败', style: TextStyle(color: Colors.red)),
+  );
+}
+
 final _mermaidUrlRegex = RegExp(
   r'<mermaid>(.+?)</mermaid>',
   dotAll: true,
@@ -79,28 +106,7 @@ class MermaidNode extends SpanNode {
             padding: const EdgeInsets.all(12),
             child: Column(
               children: [
-                Image.network(
-                  url,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) => const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text('Mermaid 图表渲染失败', style: TextStyle(color: Colors.red)),
-                  ),
-                  loadingBuilder: (_, child, progress) {
-                    if (progress == null) return child;
-                    return SizedBox(
-                      height: 200,
-                      child: Center(
-                        child: CircularProgressIndicator(
-                          value: progress.expectedTotalBytes != null
-                              ? progress.cumulativeBytesLoaded /
-                                  progress.expectedTotalBytes!
-                              : null,
-                        ),
-                      ),
-                    );
-                  },
-                ),
+                _networkImage(url, fit: BoxFit.contain),
                 const SizedBox(height: 8),
                 Text(
                   'Mermaid',

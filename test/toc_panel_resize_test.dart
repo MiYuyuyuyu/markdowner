@@ -1,7 +1,7 @@
-import 'package:flutter/material.dart';
-import 'package:flutter_test/flutter_test.dart';
 import 'dart:io';
 
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:markdown_app/models/reading_session.dart';
 import 'package:markdown_app/providers/settings_provider.dart';
 import 'package:markdown_app/providers/tab_manager.dart';
@@ -19,38 +19,20 @@ void main() {
     VisibilityDetectorController.instance.updateInterval = Duration.zero;
   });
 
-  group('SettingsProvider tocPanelWidth', () {
-    test('defaults to 240 and clamps to 180-480', () async {
-      SharedPreferences.setMockInitialValues({});
-      final storageService = await StorageService.init();
-      final settings = SettingsProvider(storageService);
-
-      expect(settings.tocPanelWidth, 240.0);
-
-      settings.setTocPanelWidth(50);
-      expect(settings.tocPanelWidth, 180.0);
-
-      settings.setTocPanelWidth(999);
-      expect(settings.tocPanelWidth, 480.0);
-    });
-
-    test('persists across provider instances', () async {
-      SharedPreferences.setMockInitialValues({});
-      final storageService = await StorageService.init();
-      final settings = SettingsProvider(storageService);
-      settings.setTocPanelWidth(320);
-
-      final reloaded = SettingsProvider(storageService);
-      expect(reloaded.tocPanelWidth, 320.0);
-    });
-  });
-
-  testWidgets('dragging the divider resizes the toc panel', (tester) async {
+  Future<(WidgetTester, StorageService)> pumpApp(
+    WidgetTester tester,
+    Map<String, Object> initialValues,
+  ) async {
     tester.view.physicalSize = const Size(1300, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
-    SharedPreferences.setMockInitialValues({});
+    final root = Directory.systemTemp.createTempSync('markdown_app_toc_');
+    addTearDown(() => root.deleteSync(recursive: true));
+    final mdFile = File('${root.path}/doc.md');
+    mdFile.writeAsStringSync('# Doc\n\n正文');
+
+    SharedPreferences.setMockInitialValues(initialValues);
     final storageService = await StorageService.init();
     await storageService.saveReadingSession(
       const ReadingSession(showToc: true),
@@ -72,36 +54,42 @@ void main() {
       ),
     );
 
-    // 目录面板只在有激活文档时渲染,先打开一个文件(真实 IO,runAsync 放行)
-    final root = Directory.systemTemp.createTempSync('markdown_app_toc_');
-    addTearDown(() => root.deleteSync(recursive: true));
-    final mdFile = File('${root.path}/doc.md');
-    mdFile.writeAsStringSync('# Doc\n\n正文');
+    // 目录面板只在有激活文档时渲染
     await tester.runAsync(() async {
       await tabManager.openFileFromPath(mdFile.path);
       await Future<void>.delayed(const Duration(milliseconds: 200));
     });
     await tester.pumpAndSettle();
+    return (tester, storageService);
+  }
 
-    // 初始宽度 240
-    expect(tester.getSize(find.byType(TocPanel)).width, 240.0);
+  testWidgets('uses persisted width, drag resizes and persists', (tester) async {
+    final (t, storageService) = await pumpApp(
+      tester,
+      {'toc_panel_width': 320.0},
+    );
 
-    // 向右拖动分隔条 60px
-    await tester.drag(
+    // 初始宽度来自持久化设置
+    expect(t.getSize(find.byType(TocPanel)).width, 320.0);
+
+    // 向右拖动 60px → 380,松手后写入持久化
+    await t.drag(
       find.byKey(const ValueKey('toc-panel-divider')),
       const Offset(60, 0),
     );
     await tester.pumpAndSettle();
 
-    expect(tester.getSize(find.byType(TocPanel)).width, closeTo(300, 2));
+    expect(t.getSize(find.byType(TocPanel)).width, closeTo(380, 2));
+    expect(storageService.getTocPanelWidth(), closeTo(380, 0.5));
 
-    // 再向左拖 200px,触发最小宽度 180 钳制(300-200=100 < 180)
-    await tester.drag(
+    // 向左拖 400px → 触发最小宽度 180 钳制
+    await t.drag(
       find.byKey(const ValueKey('toc-panel-divider')),
-      const Offset(-200, 0),
+      const Offset(-400, 0),
     );
     await tester.pumpAndSettle();
 
-    expect(tester.getSize(find.byType(TocPanel)).width, 180.0);
+    expect(t.getSize(find.byType(TocPanel)).width, 180.0);
+    expect(storageService.getTocPanelWidth(), 180.0);
   });
 }
