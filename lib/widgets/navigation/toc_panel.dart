@@ -75,6 +75,25 @@ List<HeadingItem> parseHeadings(String markdown) {
   return headings;
 }
 
+/// 找到 [lineIndex] 之前(含)最近的标题下标;没有任何更早的标题返回 -1
+int nearestHeadingIndexForLine(List<HeadingItem> headings, int lineIndex) {
+  var best = -1;
+  for (final heading in headings) {
+    if (heading.lineIndex > lineIndex) break;
+    best++;
+  }
+  return best;
+}
+
+/// 跳转到第 [headingIndex] 个标题;目录尚未就绪(渲染未完成)时不跳转
+void jumpToHeading(TocController? controller, int headingIndex) {
+  final tocList = controller?.tocList;
+  if (tocList == null || headingIndex < 0 || headingIndex >= tocList.length) {
+    return;
+  }
+  controller!.jumpToIndex(tocList.elementAt(headingIndex).widgetIndex);
+}
+
 class TocPanel extends StatefulWidget {
   final String markdownData;
   final TocController? tocController;

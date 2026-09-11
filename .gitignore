@@ -44,4 +44,5 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 myapp.jks
-BUILD_APK.md.zcode/
+BUILD_APK.md
+.zcode/
