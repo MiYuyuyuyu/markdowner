@@ -50,7 +50,7 @@ class _TabButtonState extends State<TabButton> {
                 ? Border(top: BorderSide(color: colorScheme.primary, width: 2))
                 : null,
           ),
-          padding: const EdgeInsets.only(left: 12, right: 4, top: 6, bottom: 6),
+          padding: const EdgeInsets.only(left: 12, right: 2, top: 4, bottom: 4),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -70,11 +70,9 @@ class _TabButtonState extends State<TabButton> {
                   maxLines: 1,
                 ),
               ),
-              const SizedBox(width: 4),
-              _CloseButton(
-                visible: _isHovered || widget.isActive,
-                onTap: widget.onClose,
-              ),
+              const SizedBox(width: 2),
+              // 关闭按钮常显:纯触摸设备上没有 hover,依赖 hover 会不可达
+              _CloseButton(onTap: widget.onClose),
             ],
           ),
         ),
@@ -84,10 +82,9 @@ class _TabButtonState extends State<TabButton> {
 }
 
 class _CloseButton extends StatefulWidget {
-  final bool visible;
   final VoidCallback onTap;
 
-  const _CloseButton({required this.visible, required this.onTap});
+  const _CloseButton({required this.onTap});
 
   @override
   State<_CloseButton> createState() => _CloseButtonState();
@@ -100,27 +97,32 @@ class _CloseButtonState extends State<_CloseButton> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return AnimatedOpacity(
-      duration: const Duration(milliseconds: 100),
-      opacity: widget.visible ? 1 : 0,
-      child: MouseRegion(
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
-        child: GestureDetector(
-          onTap: widget.visible ? widget.onTap : null,
-          child: Container(
-            width: 20,
-            height: 20,
-            decoration: BoxDecoration(
-              color: _hovered ? colorScheme.errorContainer : Colors.transparent,
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Icon(
-              Icons.close,
-              size: 14,
-              color: _hovered
-                  ? colorScheme.error
-                  : colorScheme.onSurfaceVariant,
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        // 36x36 命中区(标签栏高度内可容纳的最大触摸目标)
+        child: SizedBox(
+          width: 36,
+          height: 36,
+          child: Center(
+            child: Container(
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                color: _hovered
+                    ? colorScheme.errorContainer
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Icon(
+                Icons.close,
+                size: 16,
+                color: _hovered
+                    ? colorScheme.error
+                    : colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
         ),

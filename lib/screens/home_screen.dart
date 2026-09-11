@@ -9,6 +9,7 @@ import '../providers/search_provider.dart';
 import '../providers/tab_manager.dart';
 import '../providers/settings_provider.dart';
 import '../services/storage_service.dart';
+import '../theme/app_breakpoints.dart';
 import '../widgets/tab_bar/browser_tab_bar.dart';
 import '../widgets/markdown/markdown_viewer.dart';
 import '../widgets/markdown/markdown_preprocessor.dart';
@@ -19,7 +20,6 @@ import '../widgets/search/quick_open_panel.dart';
 import '../widgets/sidebar/file_explorer.dart';
 import '../widgets/welcome/welcome_page.dart';
 
-const _sidebarBreakpoint = 720.0;
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -30,6 +30,8 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _tocControllers = <String, TocController>{};
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
+  WindowTier? _previousTier;
   bool _documentSearchVisible = false;
 
   TocController? _tocControllerForActiveTab(TabManager tabManager) {
@@ -112,7 +114,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isWide = MediaQuery.of(context).size.width > _sidebarBreakpoint;
+    final tier =
+        windowTierForWidth(MediaQuery.of(context).size.width);
+    final isWide = tier == WindowTier.expanded;
     final tabManager = context.watch<TabManager>();
     final settings = context.watch<SettingsProvider>();
     _disposeClosedTabControllers(tabManager);
@@ -120,14 +124,28 @@ class _HomeScreenState extends State<HomeScreen> {
     final rawData = tabManager.activeTab?.content ?? '';
     final processedData = preprocessMarkdownData(rawData);
 
+    // 跨断点拖拽窗口时,自动收起已打开的抽屉
+    if (_previousTier != null && _previousTier != tier) {
+      final scaffoldKey = _scaffoldKey;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final scaffold = scaffoldKey.currentState;
+        if (scaffold == null) return;
+        if (scaffold.isDrawerOpen || scaffold.isEndDrawerOpen) {
+          Navigator.of(context).pop();
+        }
+      });
+    }
+    _previousTier = tier;
+
     return CallbackShortcuts(
       bindings: _buildShortcuts(context),
       child: Focus(
         autofocus: true,
         child: Scaffold(
-          appBar: _buildAppBar(context, isWide),
+          key: _scaffoldKey,
+          appBar: _buildAppBar(context, tier),
           drawer: isWide ? null : const _DrawerSidebar(),
-          endDrawer: isWide || !settings.showToc
+          endDrawer: tier != WindowTier.compact || !settings.showToc
               ? null
               : (tocController == null
                   ? null
@@ -135,7 +153,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       tocController: tocController,
                       markdownData: processedData,
                     )),
-          body: _buildBody(context, isWide, processedData, tocController),
+          body: _buildBody(context, tier, processedData, tocController),
         ),
       ),
     );
@@ -184,11 +202,12 @@ class _HomeScreenState extends State<HomeScreen> {
     };
   }
 
-  PreferredSizeWidget _buildAppBar(BuildContext context, bool isWide) {
+  PreferredSizeWidget _buildAppBar(BuildContext context, WindowTier tier) {
     final settings = context.watch<SettingsProvider>();
     final tabManager = context.watch<TabManager>();
     final colorScheme = Theme.of(context).colorScheme;
     final hasContent = tabManager.activeTab != null;
+    final isWide = tier == WindowTier.expanded;
 
     return AppBar(
       title: const Text('Markdown Reader', style: TextStyle(fontSize: 16)),
@@ -231,14 +250,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 settings.showToc ? Icons.list_alt : Icons.list_alt_outlined,
               ),
               onPressed: () {
-                if (isWide) {
-                  settings.toggleToc();
-                } else {
+                if (tier == WindowTier.compact) {
                   if (settings.showToc) {
                     settings.closeToc();
                   } else {
                     Scaffold.of(ctx).openEndDrawer();
                   }
+                } else {
+                  settings.toggleToc();
                 }
               },
               tooltip: '文档目录',
@@ -259,17 +278,19 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildBody(
     BuildContext context,
-    bool isWide,
+    WindowTier tier,
     String data,
     TocController? tocController,
   ) {
     final settings = context.watch<SettingsProvider>();
     final tabManager = context.watch<TabManager>();
+    final isWide = tier == WindowTier.expanded;
 
     return Row(
       children: [
         if (isWide && settings.showSidebar) const FileExplorer(),
-        if (isWide && settings.showToc && tocController != null)
+        // medium 档:内容 + 至多一个内嵌面板(目录),侧栏始终走抽屉
+        if (tier != WindowTier.compact && settings.showToc && tocController != null)
           TocPanel(
             key: ValueKey('toc-${tabManager.activeTab!.id}'),
             tocController: tocController,
@@ -418,11 +439,15 @@ class _ContentAreaState extends State<_ContentArea> {
   Widget build(BuildContext context) {
     final tabManager = context.watch<TabManager>();
 
-    return Column(
-      children: [
-        if (tabManager.hasTabs) const BrowserTabBar(),
-        Expanded(child: _buildContent(tabManager)),
-      ],
+    // 底部 SafeArea:避免 Android 手势条遮挡内容
+    return SafeArea(
+      top: false,
+      child: Column(
+        children: [
+          if (tabManager.hasTabs) const BrowserTabBar(),
+          Expanded(child: _buildContent(tabManager)),
+        ],
+      ),
     );
   }
 
@@ -442,13 +467,22 @@ class _ContentAreaState extends State<_ContentArea> {
       tocController: widget.tocController,
     );
 
+    // 超宽屏下限宽居中,保证舒适阅读行宽
+    final constrained = Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: readingContentMaxWidth),
+        child: viewer,
+      ),
+    );
+
     if (!widget.documentSearchVisible) {
-      return viewer;
+      return constrained;
     }
 
     return Stack(
+      alignment: Alignment.topCenter,
       children: [
-        viewer,
+        constrained,
         Positioned(
           top: 8,
           right: 32,

@@ -162,13 +162,12 @@ class _TocPanelState extends State<TocPanel> {
           const Spacer(),
           if (widget.onClose != null)
             SizedBox(
-              width: 32,
-              height: 32,
+              width: 44,
+              height: 44,
               child: IconButton(
                 onPressed: widget.onClose,
-                icon: Icon(Icons.close, size: 16, color: colorScheme.onSurfaceVariant),
-                splashRadius: 14,
-                visualDensity: VisualDensity.compact,
+                icon: Icon(Icons.close, size: 18,
+                    color: colorScheme.onSurfaceVariant),
                 padding: EdgeInsets.zero,
               ),
             ),
