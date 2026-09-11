@@ -288,7 +288,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Row(
       children: [
-        if (isWide && settings.showSidebar) const FileExplorer(),
+        if (isWide && settings.showSidebar) ...[
+          FileExplorer(width: settings.fileExplorerWidth),
+          _PanelDivider(
+            key: const ValueKey('explorer-divider'),
+            onDragDelta: (dx) => settings
+                .setFileExplorerWidth(settings.fileExplorerWidth + dx),
+          ),
+        ],
         // medium 档:内容 + 至多一个内嵌面板(目录),侧栏始终走抽屉
         if (tier != WindowTier.compact && settings.showToc && tocController != null) ...[
           TocPanel(

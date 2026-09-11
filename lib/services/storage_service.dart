@@ -10,6 +10,7 @@ class StorageService {
   static const _themeModeKey = 'theme_mode';
   static const _fontSizeKey = 'font_size';
   static const _tocPanelWidthKey = 'toc_panel_width';
+  static const _explorerWidthKey = 'file_explorer_width';
   static const _readingSessionKey = 'reading_session';
   static const _maxRecentFiles = 20;
   static const _maxRecentFolders = 10;
@@ -130,5 +131,13 @@ class StorageService {
 
   Future<void> setTocPanelWidth(double size) async {
     await _prefs.setDouble(_tocPanelWidthKey, size);
+  }
+
+  double getFileExplorerWidth() {
+    return _prefs.getDouble(_explorerWidthKey) ?? 260.0;
+  }
+
+  Future<void> setFileExplorerWidth(double size) async {
+    await _prefs.setDouble(_explorerWidthKey, size);
   }
 }
