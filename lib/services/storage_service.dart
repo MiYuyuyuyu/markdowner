@@ -9,6 +9,7 @@ class StorageService {
   static const _lastWorkspaceKey = 'last_workspace';
   static const _themeModeKey = 'theme_mode';
   static const _fontSizeKey = 'font_size';
+  static const _tocPanelWidthKey = 'toc_panel_width';
   static const _readingSessionKey = 'reading_session';
   static const _maxRecentFiles = 20;
   static const _maxRecentFolders = 10;
@@ -121,5 +122,13 @@ class StorageService {
 
   Future<void> setFontSize(double size) async {
     await _prefs.setDouble(_fontSizeKey, size);
+  }
+
+  double getTocPanelWidth() {
+    return _prefs.getDouble(_tocPanelWidthKey) ?? 240.0;
+  }
+
+  Future<void> setTocPanelWidth(double size) async {
+    await _prefs.setDouble(_tocPanelWidthKey, size);
   }
 }

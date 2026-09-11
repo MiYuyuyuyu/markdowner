@@ -290,13 +290,20 @@ class _HomeScreenState extends State<HomeScreen> {
       children: [
         if (isWide && settings.showSidebar) const FileExplorer(),
         // medium 档:内容 + 至多一个内嵌面板(目录),侧栏始终走抽屉
-        if (tier != WindowTier.compact && settings.showToc && tocController != null)
+        if (tier != WindowTier.compact && settings.showToc && tocController != null) ...[
           TocPanel(
             key: ValueKey('toc-${tabManager.activeTab!.id}'),
             tocController: tocController,
             markdownData: data,
+            width: settings.tocPanelWidth,
             onClose: settings.closeToc,
           ),
+          _PanelDivider(
+            key: const ValueKey('toc-panel-divider'),
+            onDragDelta: (dx) =>
+                settings.setTocPanelWidth(settings.tocPanelWidth + dx),
+          ),
+        ],
         Expanded(
           child: _ContentArea(
             tocController: tocController,
@@ -308,6 +315,47 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 可拖动的面板分隔条:按住左右拖动调整目录面板宽度
+class _PanelDivider extends StatefulWidget {
+  final ValueChanged<double> onDragDelta;
+
+  const _PanelDivider({required this.onDragDelta, super.key});
+
+  @override
+  State<_PanelDivider> createState() => _PanelDividerState();
+}
+
+class _PanelDividerState extends State<_PanelDivider> {
+  bool _hovering = false;
+  bool _dragging = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = _hovering || _dragging;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeLeftRight,
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragStart: (_) => setState(() => _dragging = true),
+        onHorizontalDragUpdate: (details) =>
+            widget.onDragDelta(details.delta.dx),
+        onHorizontalDragEnd: (_) => setState(() => _dragging = false),
+        child: Container(
+          width: 6,
+          height: double.infinity,
+          color: active
+              ? colorScheme.primary.withValues(alpha: 0.5)
+              : Colors.transparent,
+        ),
+      ),
     );
   }
 }
