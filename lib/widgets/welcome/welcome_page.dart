@@ -1,6 +1,9 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/tab_manager.dart';
+import '../../providers/workspace_provider.dart';
 
 class WelcomePage extends StatelessWidget {
   const WelcomePage({super.key});
@@ -38,6 +41,20 @@ class WelcomePage extends StatelessWidget {
             icon: const Icon(Icons.folder_open),
             label: const Text('打开文件'),
           ),
+          if (!Platform.isAndroid) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () async {
+                final workspace = context.read<WorkspaceProvider>();
+                final path = await workspace.openFolderPicker();
+                if (path != null) {
+                  workspace.openFolder(path);
+                }
+              },
+              icon: const Icon(Icons.folder_open_outlined),
+              label: const Text('打开文件夹'),
+            ),
+          ],
           const SizedBox(height: 48),
           _ShortcutHints(colorScheme: colorScheme),
         ],

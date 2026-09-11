@@ -69,6 +69,13 @@ int? _findClosingRun(String line, int from, String char, int length) {
   var index = 0;
   var inside = inBlockMath;
   while (index < line.length) {
+    // \] 结束 \[ 开启的块公式
+    if (line.startsWith(r'\]', index) && inside) {
+      inside = false;
+      buffer.write(r'\]');
+      index += 2;
+      continue;
+    }
     if (line.startsWith(r'$$', index)) {
       inside = !inside;
       buffer.write(r'$$');
@@ -98,8 +105,19 @@ int? _findClosingRun(String line, int from, String char, int length) {
   while (index < line.length) {
     final current = line[index];
 
-    // 反斜杠转义:原样透传,不触发任何公式状态
+    // 反斜杠转义:原样透传。其中 \( \) \[ \] 是公式定界符,参与公式状态切换
     if (current == '\\') {
+      final nextChar = index + 1 < line.length ? line[index + 1] : '';
+      switch (nextChar) {
+        case '(':
+          inInlineMath = true;
+        case ')':
+          inInlineMath = false;
+        case '[':
+          if (!inBlockMath) inBlockMath = true;
+        case ']':
+          if (inBlockMath) inBlockMath = false;
+      }
       buffer.write(current);
       if (index + 1 < line.length) buffer.write(line[index + 1]);
       index += 2;

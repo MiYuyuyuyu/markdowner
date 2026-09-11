@@ -1,17 +1,25 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:markdown_widget/markdown_widget.dart';
 import 'package:provider/provider.dart';
+import '../models/tab_item.dart';
+import '../providers/search_provider.dart';
 import '../providers/tab_manager.dart';
 import '../providers/settings_provider.dart';
+import '../services/storage_service.dart';
+import '../theme/app_breakpoints.dart';
 import '../widgets/tab_bar/browser_tab_bar.dart';
 import '../widgets/markdown/markdown_viewer.dart';
 import '../widgets/markdown/markdown_preprocessor.dart';
 import '../widgets/navigation/toc_panel.dart';
+import '../widgets/search/document_search_panel.dart';
+import '../widgets/search/global_search_panel.dart';
+import '../widgets/search/quick_open_panel.dart';
 import '../widgets/sidebar/file_explorer.dart';
 import '../widgets/welcome/welcome_page.dart';
 
-const _sidebarBreakpoint = 720.0;
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -22,6 +30,9 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _tocControllers = <String, TocController>{};
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
+  WindowTier? _previousTier;
+  bool _documentSearchVisible = false;
 
   TocController? _tocControllerForActiveTab(TabManager tabManager) {
     final activeTab = tabManager.activeTab;
@@ -47,9 +58,65 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  /// 在 [tab] 中跳转到 [lineIndex] 所在章节。切换标签后目录可能尚未渲染完成,
+  /// 最多重试 [tries] 帧。
+  void _jumpToLineInTab(TabItem tab, int lineIndex, {int tries = 5}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final controller = _tocControllers[tab.id];
+      if (controller == null) return;
+      final headings = parseHeadings(tab.content);
+      final headingIndex = nearestHeadingIndexForLine(headings, lineIndex);
+      final tocList = controller.tocList;
+      if (headingIndex >= 0 && headingIndex < tocList.length) {
+        controller.jumpToIndex(tocList.elementAt(headingIndex).widgetIndex);
+      } else if (tries > 0) {
+        _jumpToLineInTab(tab, lineIndex, tries: tries - 1);
+      }
+    });
+  }
+
+  void _showGlobalSearch() {
+    final tabManager = context.read<TabManager>();
+    if (!tabManager.hasTabs) return;
+    showDialog(
+      context: context,
+      builder: (_) => GlobalSearchPanel(
+        tabs: tabManager.tabs,
+        onSelected: (tab, lineIndex) {
+          final index = tabManager.tabs.indexOf(tab);
+          if (index < 0) return;
+          tabManager.setActiveTab(index);
+          _jumpToLineInTab(tab, lineIndex);
+        },
+      ),
+    );
+  }
+
+  void _showQuickOpen() {
+    final tabManager = context.read<TabManager>();
+    final storageService = context.read<StorageService>();
+    showDialog(
+      context: context,
+      builder: (_) => QuickOpenPanel(
+        entries: buildQuickOpenEntries(
+          tabs: tabManager.tabs,
+          recentPaths: storageService.getRecentFiles(),
+          fileNameOf: (path) => path.split(Platform.pathSeparator).last,
+        ),
+        onSelected: (entry) {
+          final path = entry.path;
+          if (path == null) return;
+          tabManager.openFileFromPath(path);
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final isWide = MediaQuery.of(context).size.width > _sidebarBreakpoint;
+    final tier =
+        windowTierForWidth(MediaQuery.of(context).size.width);
+    final isWide = tier == WindowTier.expanded;
     final tabManager = context.watch<TabManager>();
     final settings = context.watch<SettingsProvider>();
     _disposeClosedTabControllers(tabManager);
@@ -57,14 +124,28 @@ class _HomeScreenState extends State<HomeScreen> {
     final rawData = tabManager.activeTab?.content ?? '';
     final processedData = preprocessMarkdownData(rawData);
 
+    // 跨断点拖拽窗口时,自动收起已打开的抽屉
+    if (_previousTier != null && _previousTier != tier) {
+      final scaffoldKey = _scaffoldKey;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final scaffold = scaffoldKey.currentState;
+        if (scaffold == null) return;
+        if (scaffold.isDrawerOpen || scaffold.isEndDrawerOpen) {
+          Navigator.of(context).pop();
+        }
+      });
+    }
+    _previousTier = tier;
+
     return CallbackShortcuts(
       bindings: _buildShortcuts(context),
       child: Focus(
         autofocus: true,
         child: Scaffold(
-          appBar: _buildAppBar(context, isWide),
+          key: _scaffoldKey,
+          appBar: _buildAppBar(context, tier),
           drawer: isWide ? null : const _DrawerSidebar(),
-          endDrawer: isWide || !settings.showToc
+          endDrawer: tier != WindowTier.compact || !settings.showToc
               ? null
               : (tocController == null
                   ? null
@@ -72,7 +153,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       tocController: tocController,
                       markdownData: processedData,
                     )),
-          body: _buildBody(context, isWide, processedData, tocController),
+          body: _buildBody(context, tier, processedData, tocController),
         ),
       ),
     );
@@ -90,6 +171,17 @@ class _HomeScreenState extends State<HomeScreen> {
         if (tabManager.activeIndex >= 0) {
           tabManager.closeTab(tabManager.activeIndex);
         }
+      },
+      const SingleActivator(LogicalKeyboardKey.keyF, control: true): () {
+        if (tabManager.activeIndex >= 0) {
+          setState(() => _documentSearchVisible = !_documentSearchVisible);
+        }
+      },
+      const SingleActivator(LogicalKeyboardKey.keyF, control: true, shift: true): () {
+        _showGlobalSearch();
+      },
+      const SingleActivator(LogicalKeyboardKey.keyP, control: true): () {
+        _showQuickOpen();
       },
       // Windows 上 "+" 需要 Shift(即 Ctrl+Shift+=),小键盘加减号是独立按键
       const SingleActivator(LogicalKeyboardKey.equal, control: true): () {
@@ -110,11 +202,12 @@ class _HomeScreenState extends State<HomeScreen> {
     };
   }
 
-  PreferredSizeWidget _buildAppBar(BuildContext context, bool isWide) {
+  PreferredSizeWidget _buildAppBar(BuildContext context, WindowTier tier) {
     final settings = context.watch<SettingsProvider>();
     final tabManager = context.watch<TabManager>();
     final colorScheme = Theme.of(context).colorScheme;
     final hasContent = tabManager.activeTab != null;
+    final isWide = tier == WindowTier.expanded;
 
     return AppBar(
       title: const Text('Markdown Reader', style: TextStyle(fontSize: 16)),
@@ -133,20 +226,38 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       actions: [
         if (hasContent)
+          IconButton(
+            icon: const Icon(Icons.search),
+            tooltip: '文档内搜索 (Ctrl+F)',
+            onPressed: () =>
+                setState(() => _documentSearchVisible = !_documentSearchVisible),
+          ),
+        if (tabManager.hasTabs)
+          IconButton(
+            icon: const Icon(Icons.manage_search),
+            tooltip: '跨标签搜索 (Ctrl+Shift+F)',
+            onPressed: _showGlobalSearch,
+          ),
+        IconButton(
+          icon: const Icon(Icons.file_open),
+          tooltip: '快速打开 (Ctrl+P)',
+          onPressed: _showQuickOpen,
+        ),
+        if (hasContent)
           Builder(
             builder: (ctx) => IconButton(
               icon: Icon(
                 settings.showToc ? Icons.list_alt : Icons.list_alt_outlined,
               ),
               onPressed: () {
-                if (isWide) {
-                  settings.toggleToc();
-                } else {
+                if (tier == WindowTier.compact) {
                   if (settings.showToc) {
                     settings.closeToc();
                   } else {
                     Scaffold.of(ctx).openEndDrawer();
                   }
+                } else {
+                  settings.toggleToc();
                 }
               },
               tooltip: '文档目录',
@@ -167,17 +278,19 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildBody(
     BuildContext context,
-    bool isWide,
+    WindowTier tier,
     String data,
     TocController? tocController,
   ) {
     final settings = context.watch<SettingsProvider>();
     final tabManager = context.watch<TabManager>();
+    final isWide = tier == WindowTier.expanded;
 
     return Row(
       children: [
         if (isWide && settings.showSidebar) const FileExplorer(),
-        if (isWide && settings.showToc && tocController != null)
+        // medium 档:内容 + 至多一个内嵌面板(目录),侧栏始终走抽屉
+        if (tier != WindowTier.compact && settings.showToc && tocController != null)
           TocPanel(
             key: ValueKey('toc-${tabManager.activeTab!.id}'),
             tocController: tocController,
@@ -188,6 +301,10 @@ class _HomeScreenState extends State<HomeScreen> {
           child: _ContentArea(
             tocController: tocController,
             data: data,
+            documentSearchVisible: _documentSearchVisible,
+            onDocumentSearchClosed: () =>
+                setState(() => _documentSearchVisible = false),
+            onJumpToLine: _jumpToLineInTab,
           ),
         ),
       ],
@@ -298,21 +415,39 @@ class _FontSizeControls extends StatelessWidget {
   }
 }
 
-class _ContentArea extends StatelessWidget {
+class _ContentArea extends StatefulWidget {
   final TocController? tocController;
   final String data;
+  final bool documentSearchVisible;
+  final VoidCallback onDocumentSearchClosed;
+  final void Function(TabItem tab, int lineIndex) onJumpToLine;
 
-  const _ContentArea({required this.tocController, required this.data});
+  const _ContentArea({
+    required this.tocController,
+    required this.data,
+    required this.documentSearchVisible,
+    required this.onDocumentSearchClosed,
+    required this.onJumpToLine,
+  });
 
+  @override
+  State<_ContentArea> createState() => _ContentAreaState();
+}
+
+class _ContentAreaState extends State<_ContentArea> {
   @override
   Widget build(BuildContext context) {
     final tabManager = context.watch<TabManager>();
 
-    return Column(
-      children: [
-        if (tabManager.hasTabs) const BrowserTabBar(),
-        Expanded(child: _buildContent(tabManager)),
-      ],
+    // 底部 SafeArea:避免 Android 手势条遮挡内容
+    return SafeArea(
+      top: false,
+      child: Column(
+        children: [
+          if (tabManager.hasTabs) const BrowserTabBar(),
+          Expanded(child: _buildContent(tabManager)),
+        ],
+      ),
     );
   }
 
@@ -321,15 +456,45 @@ class _ContentArea extends StatelessWidget {
     if (activeTab == null) {
       return const WelcomePage();
     }
-    return MarkdownViewer(
+    final viewer = MarkdownViewer(
       key: ValueKey(activeTab.id),
-      data: data,
+      data: widget.data,
       preprocessed: true,
       initialScrollOffset: activeTab.scrollOffset,
       onScrollChanged: (offset) {
         tabManager.updateScrollOffset(tabManager.activeIndex, offset);
       },
-      tocController: tocController,
+      tocController: widget.tocController,
+    );
+
+    // 超宽屏下限宽居中,保证舒适阅读行宽
+    final constrained = Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: readingContentMaxWidth),
+        child: viewer,
+      ),
+    );
+
+    if (!widget.documentSearchVisible) {
+      return constrained;
+    }
+
+    return Stack(
+      alignment: Alignment.topCenter,
+      children: [
+        constrained,
+        Positioned(
+          top: 8,
+          right: 32,
+          child: DocumentSearchPanel(
+            key: ValueKey('doc-search-${activeTab.id}'),
+            text: activeTab.content,
+            onJumpToLine: (lineIndex) =>
+                widget.onJumpToLine(activeTab, lineIndex),
+            onClose: widget.onDocumentSearchClosed,
+          ),
+        ),
+      ],
     );
   }
 }

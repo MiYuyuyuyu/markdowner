@@ -75,6 +75,25 @@ List<HeadingItem> parseHeadings(String markdown) {
   return headings;
 }
 
+/// 找到 [lineIndex] 之前(含)最近的标题下标;没有任何更早的标题返回 -1
+int nearestHeadingIndexForLine(List<HeadingItem> headings, int lineIndex) {
+  var best = -1;
+  for (final heading in headings) {
+    if (heading.lineIndex > lineIndex) break;
+    best++;
+  }
+  return best;
+}
+
+/// 跳转到第 [headingIndex] 个标题;目录尚未就绪(渲染未完成)时不跳转
+void jumpToHeading(TocController? controller, int headingIndex) {
+  final tocList = controller?.tocList;
+  if (tocList == null || headingIndex < 0 || headingIndex >= tocList.length) {
+    return;
+  }
+  controller!.jumpToIndex(tocList.elementAt(headingIndex).widgetIndex);
+}
+
 class TocPanel extends StatefulWidget {
   final String markdownData;
   final TocController? tocController;
@@ -143,13 +162,12 @@ class _TocPanelState extends State<TocPanel> {
           const Spacer(),
           if (widget.onClose != null)
             SizedBox(
-              width: 32,
-              height: 32,
+              width: 44,
+              height: 44,
               child: IconButton(
                 onPressed: widget.onClose,
-                icon: Icon(Icons.close, size: 16, color: colorScheme.onSurfaceVariant),
-                splashRadius: 14,
-                visualDensity: VisualDensity.compact,
+                icon: Icon(Icons.close, size: 18,
+                    color: colorScheme.onSurfaceVariant),
                 padding: EdgeInsets.zero,
               ),
             ),

@@ -21,6 +21,23 @@ void main() {
       expect(result, contains(latexPipeToken));
     });
 
+    test(r'inline \( \) math protects pipes', () {
+      final result = normalizeMarkdownForParsing(r'\(a|b\)');
+      expect(result, contains(latexPipeToken));
+    });
+
+    test(r'bracket \[ \] math protects pipes across lines', () {
+      final result = normalizeMarkdownForParsing('\\[\nx = a | b\n\\]');
+      expect(result, contains(latexPipeToken));
+    });
+
+    test(r'escaped \[ outside math does not corrupt pipes', () {
+      // \$ 转义不参与状态;成对的 \[...\] 之后表格管道应保持原样
+      const data = r'花费 \$5 \[完\] 继续说明' '\n\n| A | B |\n|---|---|\n| 1 | 2 |';
+      final result = normalizeMarkdownForParsing(data);
+      expect(result, contains('| A | B |'));
+    });
+
     test('does not touch pipes outside math', () {
       const data = '| A | B |\n|---|---|\n| 1 | 2 |';
       final result = normalizeMarkdownForParsing(data);

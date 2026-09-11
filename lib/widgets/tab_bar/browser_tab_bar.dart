@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../models/tab_item.dart';
 import '../../providers/tab_manager.dart';
 import 'tab_button.dart';
 
@@ -12,7 +13,7 @@ class BrowserTabBar extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Container(
-      height: 40,
+      height: 48,
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerLow,
         border: Border(
@@ -37,7 +38,7 @@ class BrowserTabBar extends StatelessWidget {
   }
 }
 
-class _TabList extends StatelessWidget {
+class _TabList extends StatefulWidget {
   final List tabs;
   final int activeIndex;
   final ValueChanged<int> onTap;
@@ -53,6 +54,44 @@ class _TabList extends StatelessWidget {
   });
 
   @override
+  State<_TabList> createState() => _TabListState();
+}
+
+class _TabListState extends State<_TabList> {
+  final _itemKeys = <String, GlobalKey>{};
+
+  GlobalKey _keyFor(String id) =>
+      _itemKeys.putIfAbsent(id, () => GlobalKey());
+
+  @override
+  void didUpdateWidget(_TabList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 切换标签后把激活标签滚动到可视区
+    if (widget.activeIndex != oldWidget.activeIndex &&
+        widget.activeIndex >= 0 &&
+        widget.activeIndex < widget.tabs.length) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _ensureActiveVisible();
+      });
+    }
+  }
+
+  void _ensureActiveVisible() {
+    if (widget.activeIndex < 0 || widget.activeIndex >= widget.tabs.length) {
+      return;
+    }
+    final id = (widget.tabs[widget.activeIndex] as TabItem).id;
+    final context = _itemKeys[id]?.currentContext;
+    if (context != null && context.findRenderObject() != null) {
+      Scrollable.ensureVisible(
+        context,
+        duration: const Duration(milliseconds: 200),
+        alignment: 0.1,
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return ReorderableListView.builder(
       scrollDirection: Axis.horizontal,
@@ -64,20 +103,21 @@ class _TabList extends StatelessWidget {
           child: child,
         );
       },
-      onReorder: onReorder,
-      itemCount: tabs.length,
+      onReorder: widget.onReorder,
+      itemCount: widget.tabs.length,
       itemBuilder: (context, index) {
-        final tab = tabs[index];
+        final tab = widget.tabs[index];
+        final key = _keyFor(tab.id as String);
         return ReorderableDragStartListener(
-          key: ValueKey(tab.id),
+          key: key,
           index: index,
           child: _TabContextMenu(
             index: index,
             child: TabButton(
               title: tab.title,
-              isActive: index == activeIndex,
-              onTap: () => onTap(index),
-              onClose: () => onClose(index),
+              isActive: index == widget.activeIndex,
+              onTap: () => widget.onTap(index),
+              onClose: () => widget.onClose(index),
             ),
           ),
         );
@@ -99,6 +139,12 @@ class _TabContextMenu extends StatelessWidget {
     return GestureDetector(
       onSecondaryTapUp: (details) {
         _showContextMenu(context, details.globalPosition, tabManager);
+      },
+      // 长按等价于右键菜单:触摸设备上唯一可达入口
+      onLongPress: () {
+        final box = context.findRenderObject() as RenderBox;
+        final position = box.localToGlobal(Offset(box.size.width - 8, 0));
+        _showContextMenu(context, position, tabManager);
       },
       child: child,
     );
@@ -143,13 +189,13 @@ class _AddTabButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 2),
       child: IconButton(
         onPressed: onTap,
-        icon: const Icon(Icons.add, size: 18),
+        icon: const Icon(Icons.add, size: 20),
         tooltip: '打开文件',
-        splashRadius: 16,
-        visualDensity: VisualDensity.compact,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
       ),
     );
   }
