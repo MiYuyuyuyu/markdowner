@@ -34,6 +34,19 @@ class _HomeScreenState extends State<HomeScreen> {
   WindowTier? _previousTier;
   bool _documentSearchVisible = false;
 
+  // 面板宽度用本地 ValueNotifier 驱动:拖动过程中只重建面板子树,
+  // 不触发 SettingsProvider 通知(MarkdownWidget 的 didUpdateWidget
+  // 会无条件重新解析整篇文档,每帧重解析会严重卡顿)
+  late final ValueNotifier<double> _tocWidth = ValueNotifier<double>(
+    _clampTocWidth(context.read<StorageService>().getTocPanelWidth()),
+  );
+  late final ValueNotifier<double> _explorerWidth = ValueNotifier<double>(
+    _clampExplorerWidth(context.read<StorageService>().getFileExplorerWidth()),
+  );
+
+  double _clampTocWidth(double width) => width.clamp(180.0, 480.0);
+  double _clampExplorerWidth(double width) => width.clamp(200.0, 400.0);
+
   TocController? _tocControllerForActiveTab(TabManager tabManager) {
     final activeTab = tabManager.activeTab;
     if (activeTab == null) return null;
@@ -300,30 +313,43 @@ class _HomeScreenState extends State<HomeScreen> {
     final settings = context.watch<SettingsProvider>();
     final tabManager = context.watch<TabManager>();
     final isWide = tier == WindowTier.expanded;
+    final storageService = context.read<StorageService>();
 
     return Row(
       children: [
         if (isWide && settings.showSidebar) ...[
-          FileExplorer(width: settings.fileExplorerWidth),
+          // 宽度由 ValueNotifier 驱动:拖动中不重建右侧 markdown 内容
+          ValueListenableBuilder<double>(
+            valueListenable: _explorerWidth,
+            builder: (context, width, _) =>
+                FileExplorer(width: width),
+          ),
           _PanelDivider(
             key: const ValueKey('explorer-divider'),
-            onDragDelta: (dx) => settings
-                .setFileExplorerWidth(settings.fileExplorerWidth + dx),
+            onDragDelta: (dx) => _explorerWidth.value =
+                _clampExplorerWidth(_explorerWidth.value + dx),
+            onDragEnd: () => storageService
+                .setFileExplorerWidth(_explorerWidth.value),
           ),
         ],
         // medium 档:内容 + 至多一个内嵌面板(目录),侧栏始终走抽屉
         if (tier != WindowTier.compact && settings.showToc && tocController != null) ...[
-          TocPanel(
-            key: ValueKey('toc-${tabManager.activeTab!.id}'),
-            tocController: tocController,
-            markdownData: data,
-            width: settings.tocPanelWidth,
-            onClose: settings.closeToc,
+          ValueListenableBuilder<double>(
+            valueListenable: _tocWidth,
+            builder: (context, width, _) => TocPanel(
+              key: ValueKey('toc-${tabManager.activeTab!.id}'),
+              tocController: tocController,
+              markdownData: data,
+              width: width,
+              onClose: settings.closeToc,
+            ),
           ),
           _PanelDivider(
             key: const ValueKey('toc-panel-divider'),
             onDragDelta: (dx) =>
-                settings.setTocPanelWidth(settings.tocPanelWidth + dx),
+                _tocWidth.value = _clampTocWidth(_tocWidth.value + dx),
+            onDragEnd: () =>
+                storageService.setTocPanelWidth(_tocWidth.value),
           ),
         ],
         Expanded(
@@ -344,8 +370,9 @@ class _HomeScreenState extends State<HomeScreen> {
 /// 可拖动的面板分隔条:按住左右拖动调整目录面板宽度
 class _PanelDivider extends StatefulWidget {
   final ValueChanged<double> onDragDelta;
+  final VoidCallback? onDragEnd;
 
-  const _PanelDivider({required this.onDragDelta, super.key});
+  const _PanelDivider({required this.onDragDelta, this.onDragEnd, super.key});
 
   @override
   State<_PanelDivider> createState() => _PanelDividerState();
@@ -369,7 +396,10 @@ class _PanelDividerState extends State<_PanelDivider> {
         onHorizontalDragStart: (_) => setState(() => _dragging = true),
         onHorizontalDragUpdate: (details) =>
             widget.onDragDelta(details.delta.dx),
-        onHorizontalDragEnd: (_) => setState(() => _dragging = false),
+        onHorizontalDragEnd: (_) {
+          setState(() => _dragging = false);
+          widget.onDragEnd?.call();
+        },
         child: Container(
           width: 6,
           height: double.infinity,

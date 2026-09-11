@@ -119,10 +119,21 @@ class TocPanel extends StatefulWidget {
 }
 
 class _TocPanelState extends State<TocPanel> {
+  late List<HeadingItem> _headings = parseHeadings(widget.markdownData);
+
+  @override
+  void didUpdateWidget(TocPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 宽度变化等重建不需要重新解析标题
+    if (oldWidget.markdownData != widget.markdownData) {
+      _headings = parseHeadings(widget.markdownData);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final headings = parseHeadings(widget.markdownData);
+    final headings = _headings;
 
     return Container(
       width: widget.width,
