@@ -13,7 +13,10 @@ import '../../services/storage_service.dart';
 bool get _supportsFolderBrowsing => !Platform.isAndroid;
 
 class FileExplorer extends StatefulWidget {
-  const FileExplorer({super.key});
+  /// 面板宽度(由拖动分隔条调整,持久化于设置)
+  final double width;
+
+  const FileExplorer({super.key, this.width = 260});
 
   @override
   State<FileExplorer> createState() => _FileExplorerState();
@@ -29,7 +32,7 @@ class _FileExplorerState extends State<FileExplorer> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Container(
-      width: 260,
+      width: widget.width,
       decoration: BoxDecoration(
         color: colorScheme.surface,
         border: Border(
