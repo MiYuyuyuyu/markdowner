@@ -99,11 +99,15 @@ class TocPanel extends StatefulWidget {
   final TocController? tocController;
   final VoidCallback? onClose;
 
+  /// 面板宽度(由拖动分隔条调整,持久化于设置)
+  final double width;
+
   const TocPanel({
     super.key,
     required this.markdownData,
     this.tocController,
     this.onClose,
+    this.width = 240,
   });
 
   @override
@@ -117,7 +121,7 @@ class _TocPanelState extends State<TocPanel> {
     final headings = parseHeadings(widget.markdownData);
 
     return Container(
-      width: 240,
+      width: widget.width,
       decoration: BoxDecoration(
         color: colorScheme.surface,
         border: Border(
