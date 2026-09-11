@@ -91,7 +91,11 @@ void jumpToHeading(TocController? controller, int headingIndex) {
   if (tocList == null || headingIndex < 0 || headingIndex >= tocList.length) {
     return;
   }
-  controller!.jumpToIndex(tocList.elementAt(headingIndex).widgetIndex);
+  try {
+    controller!.jumpToIndex(tocList.elementAt(headingIndex).widgetIndex);
+  } catch (_) {
+    // 树已卸载(如关闭全部标签)时 scroll_to_index 内部可能抛错,忽略
+  }
 }
 
 class TocPanel extends StatefulWidget {

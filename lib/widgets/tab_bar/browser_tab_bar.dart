@@ -71,6 +71,7 @@ class _TabListState extends State<_TabList> {
         widget.activeIndex >= 0 &&
         widget.activeIndex < widget.tabs.length) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
         _ensureActiveVisible();
       });
     }
