@@ -258,7 +258,7 @@ x = a | b
     expect(find.byType(Wrap), findsNothing);
   });
 
-  testWidgets('wide table scrolls horizontally instead of being squeezed', (
+  testWidgets('wide table wraps content without crash (FlexColumnWidth)', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(320, 600);
@@ -277,18 +277,11 @@ x = a | b
     );
     await tester.pumpAndSettle();
 
+    // IntrinsicColumnWidth 会对含公式的单元格做固有测量并崩溃
+    // (公式重音符号内部含 LayoutBuilder),因此表格必须使用 FlexColumnWidth
     expect(tester.takeException(), isNull);
     final table = tester.widget<Table>(find.byType(Table));
-    expect(table.defaultColumnWidth, isA<IntrinsicColumnWidth>());
-    // 表格实际内容宽于视口,出现横向滚动
-    final scrollable = find
-        .descendant(
-          of: find.byKey(const ValueKey('markdown-table-wrapper')),
-          matching: find.byType(Scrollable),
-        )
-        .first;
-    final position = tester.state<ScrollableState>(scrollable).position;
-    expect(position.maxScrollExtent, greaterThan(0));
+    expect(table.defaultColumnWidth, isA<FlexColumnWidth>());
   });
 
   testWidgets('narrow table still fills available width', (tester) async {
