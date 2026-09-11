@@ -45,8 +45,15 @@ class _HomeScreenState extends State<HomeScreen> {
     final closedTabIds = _tocControllers.keys
         .where((tabId) => !openTabIds.contains(tabId))
         .toList();
+    if (closedTabIds.isEmpty) return;
     for (final tabId in closedTabIds) {
-      _tocControllers.remove(tabId)?.dispose();
+      final controller = _tocControllers.remove(tabId);
+      if (controller == null) continue;
+      // 帧结束后再 dispose:关闭全部标签时,旧 widget 树可能还有
+      // 在途的跳转动画/最后一帧布局,立即 dispose 会导致框架状态损坏
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        controller.dispose();
+      });
     }
   }
 
@@ -59,16 +66,24 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// 在 [tab] 中跳转到 [lineIndex] 所在章节。切换标签后目录可能尚未渲染完成,
-  /// 最多重试 [tries] 帧。
+  /// 最多重试 [tries] 帧。期间标签被关闭则放弃跳转。
   void _jumpToLineInTab(TabItem tab, int lineIndex, {int tries = 5}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // 标签可能已被关闭(如关闭全部):控制器已注销时放弃,
+      // 否则会触达已卸载的元素(scroll_to_index 崩溃 + 框架状态损坏)
+      if (!_tocControllers.containsKey(tab.id)) return;
       final controller = _tocControllers[tab.id];
       if (controller == null) return;
       final headings = parseHeadings(tab.content);
       final headingIndex = nearestHeadingIndexForLine(headings, lineIndex);
       final tocList = controller.tocList;
       if (headingIndex >= 0 && headingIndex < tocList.length) {
-        controller.jumpToIndex(tocList.elementAt(headingIndex).widgetIndex);
+        try {
+          controller.jumpToIndex(tocList.elementAt(headingIndex).widgetIndex);
+        } catch (_) {
+          // 跳转期间树被卸载,忽略本次跳转
+        }
       } else if (tries > 0) {
         _jumpToLineInTab(tab, lineIndex, tries: tries - 1);
       }
