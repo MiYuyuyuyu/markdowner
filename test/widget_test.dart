@@ -757,6 +757,7 @@ graph TD
     await tester.pumpWidget(
       MultiProvider(
         providers: [
+          Provider<StorageService>.value(value: storageService),
           ChangeNotifierProvider(
             create: (_) => SettingsProvider(storageService),
           ),
