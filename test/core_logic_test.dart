@@ -61,18 +61,17 @@ void main() {
   });
 
   group('FileService.extractFileName', () {
-    final fileService = FileService();
 
     test('handles forward slashes on any platform', () {
-      expect(fileService.extractFileName(r'C:/notes/diary.md'), 'diary.md');
+      expect(FileService.extractFileName(r'C:/notes/diary.md'), 'diary.md');
     });
 
     test('handles backslashes', () {
-      expect(fileService.extractFileName(r'C:\notes\diary.md'), 'diary.md');
+      expect(FileService.extractFileName(r'C:\notes\diary.md'), 'diary.md');
     });
 
     test('handles mixed separators', () {
-      expect(fileService.extractFileName(r'C:\notes/sub\diary.md'), 'diary.md');
+      expect(FileService.extractFileName(r'C:\notes/sub\diary.md'), 'diary.md');
     });
   });
 

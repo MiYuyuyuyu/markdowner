@@ -5,10 +5,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class StorageService {
   static const _recentFilesKey = 'recent_files';
+  static const _recentFoldersKey = 'recent_folders';
+  static const _lastWorkspaceKey = 'last_workspace';
   static const _themeModeKey = 'theme_mode';
   static const _fontSizeKey = 'font_size';
   static const _readingSessionKey = 'reading_session';
   static const _maxRecentFiles = 20;
+  static const _maxRecentFolders = 10;
 
   final SharedPreferences _prefs;
 
@@ -41,6 +44,29 @@ class StorageService {
 
   Future<void> clearRecentFiles() async {
     await _prefs.remove(_recentFilesKey);
+  }
+
+  List<String> getRecentFolders() {
+    return _prefs.getStringList(_recentFoldersKey) ?? [];
+  }
+
+  Future<void> addRecentFolder(String path) async {
+    final folders = getRecentFolders();
+    folders.remove(path);
+    folders.insert(0, path);
+    if (folders.length > _maxRecentFolders) {
+      folders.removeRange(_maxRecentFolders, folders.length);
+    }
+    await _prefs.setStringList(_recentFoldersKey, folders);
+    await setLastWorkspace(path);
+  }
+
+  String? getLastWorkspace() {
+    return _prefs.getString(_lastWorkspaceKey);
+  }
+
+  Future<void> setLastWorkspace(String path) async {
+    await _prefs.setString(_lastWorkspaceKey, path);
   }
 
   ReadingSession getReadingSession() {

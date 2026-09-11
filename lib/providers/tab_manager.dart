@@ -31,7 +31,7 @@ class TabManager extends ChangeNotifier {
     for (final savedTab in session.openTabs) {
       try {
         final content = await _fileService.readFile(savedTab.path);
-        final fileName = _fileService.extractFileName(savedTab.path);
+        final fileName = FileService.extractFileName(savedTab.path);
         _tabs.add(TabItem(
           id: savedTab.path,
           title: fileName,
@@ -75,7 +75,7 @@ class TabManager extends ChangeNotifier {
 
     try {
       final content = await _fileService.readFile(path);
-      final fileName = _fileService.extractFileName(path);
+      final fileName = FileService.extractFileName(path);
       final tab = TabItem(
         id: '${DateTime.now().millisecondsSinceEpoch}-${_idCounter++}',
         title: fileName,
