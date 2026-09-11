@@ -93,8 +93,11 @@ MarkdownConfig _buildMarkdownConfig({
       ),
       ImgConfig(builder: buildMarkdownImage),
       TableConfig(
-        // 内容自适应列宽:窄表撑满,宽表可横向滚动,不再被均分压缩
-        defaultColumnWidth: const IntrinsicColumnWidth(),
+        // 注意:此处必须使用 FlexColumnWidth。
+        // IntrinsicColumnWidth 会对单元格做固有尺寸测量,而公式中
+        // \bar/\hat 等重音符号经 flutter_math_fork 渲染时内部含
+        // LayoutBuilder(不支持 intrinsic 测量),数学笔记必崩。
+        defaultColumnWidth: const FlexColumnWidth(),
         headerStyle: baseStyle.copyWith(fontWeight: FontWeight.w700),
         bodyStyle: baseStyle,
         border: TableBorder.all(
