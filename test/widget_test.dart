@@ -739,7 +739,8 @@ graph TD
 
     expect(find.textContaining('前文'), findsOneWidget);
     expect(find.textContaining('后文'), findsOneWidget);
-    expect(find.byType(Math), findsOneWidget);
+    // 块级公式按断行点拆分后可能产生多个 Math 片段
+    expect(find.byType(Math), findsWidgets);
   });
 
   testWidgets('HomeScreen renders without tabs on narrow window with toc', (

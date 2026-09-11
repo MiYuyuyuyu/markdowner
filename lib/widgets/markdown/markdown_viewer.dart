@@ -1,10 +1,14 @@
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
+import 'package:markdown/markdown.dart' as md;
 import 'package:markdown_widget/markdown_widget.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/settings_provider.dart';
+import 'alert_support.dart';
+import 'code_block_support.dart';
+import 'image_support.dart';
 import 'latex_support.dart';
 import 'markdown_preprocessor.dart';
 import 'markdown_render_keys.dart';
@@ -83,19 +87,43 @@ MarkdownConfig _buildMarkdownConfig({
       H4Config(style: headingStyle(16)),
       H5Config(style: headingStyle(16)),
       H6Config(style: headingStyle(16)),
-      PreConfig(textStyle: baseStyle),
+      PreConfig(
+        textStyle: baseStyle,
+        wrapper: wrapCodeBlock,
+      ),
+      ImgConfig(builder: buildMarkdownImage),
       TableConfig(
-        defaultColumnWidth: const FlexColumnWidth(),
+        // 内容自适应列宽:窄表撑满,宽表可横向滚动,不再被均分压缩
+        defaultColumnWidth: const IntrinsicColumnWidth(),
         headerStyle: baseStyle.copyWith(fontWeight: FontWeight.w700),
         bodyStyle: baseStyle,
+        border: TableBorder.all(
+          color: isDark ? const Color(0xFF444C56) : const Color(0xFFD0D7DE),
+          width: 1,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        headerRowDecoration: BoxDecoration(
+          color: isDark ? const Color(0xFF2B313A) : const Color(0xFFF6F8FA),
+        ),
+        headPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        bodyPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         wrapper: (table) => LayoutBuilder(
-          builder: (context, constraints) => SizedBox(
-            key: tableWrapperKey,
-            width: constraints.hasBoundedWidth
+          builder: (context, constraints) {
+            final width = constraints.hasBoundedWidth
                 ? constraints.maxWidth
-                : MediaQuery.sizeOf(context).width,
-            child: table,
-          ),
+                : MediaQuery.sizeOf(context).width;
+            return SizedBox(
+              key: tableWrapperKey,
+              width: width,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minWidth: width),
+                  child: table,
+                ),
+              ),
+            );
+          },
         ),
       ),
     ],
@@ -226,8 +254,13 @@ class _MarkdownViewerState extends State<MarkdownViewer> {
           config: config,
           tocController: widget.tocController,
           markdownGenerator: MarkdownGenerator(
-            generators: [latexGenerator, mermaidGenerator],
-            inlineSyntaxList: [LatexSyntax(), MermaidSyntax()],
+            generators: [latexGenerator, mermaidGenerator, alertGenerator],
+            inlineSyntaxList: [
+              LatexSyntax(),
+              MermaidSyntax(),
+              md.EmojiSyntax(),
+            ],
+            blockSyntaxList: [const md.AlertBlockSyntax()],
             richTextBuilder: _buildMarkdownBlock,
           ),
         ),

@@ -17,7 +17,9 @@ SpanNodeGeneratorWithTag latexGenerator = SpanNodeGeneratorWithTag(
 
 class LatexSyntax extends md.InlineSyntax {
   // 行内公式不允许跨行:否则相邻行的普通文本(如含货币符号的行)会被吞进同一个坏公式。
-  LatexSyntax() : super(r'(\$\$[^$]+\$\$)|(\$[^$\n]+\$)');
+  // 同时支持 $...$、$$...$$、\(...\)、\[...\] 四种定界符。
+  LatexSyntax()
+      : super(r'(\$\$[^$]+\$\$)|(\\\[[\s\S]*?\\\])|(\$[^$\n]+\$)|(\\\(.*?\\\))');
 
   @override
   bool onMatch(md.InlineParser parser, Match match) {
@@ -25,15 +27,26 @@ class LatexSyntax extends md.InlineSyntax {
     String content = '';
     bool isInline = true;
 
-    if (matchValue.startsWith('\$\$') &&
-        matchValue.endsWith('\$\$') &&
+    if (matchValue.startsWith(r'$$') &&
+        matchValue.endsWith(r'$$') &&
         matchValue.length > 4) {
       content = matchValue.substring(2, matchValue.length - 2);
       isInline = false;
-    } else if (matchValue.startsWith('\$') &&
-        matchValue.endsWith('\$') &&
+    } else if (matchValue.startsWith(r'\[') &&
+        matchValue.endsWith(r'\]') &&
+        matchValue.length > 4) {
+      content = matchValue.substring(2, matchValue.length - 2);
+      isInline = false;
+    } else if (matchValue.startsWith(r'\(') &&
+        matchValue.endsWith(r'\)') &&
+        matchValue.length > 4) {
+      content = matchValue.substring(2, matchValue.length - 2);
+      isInline = true;
+    } else if (matchValue.startsWith(r'$') &&
+        matchValue.endsWith(r'$') &&
         matchValue.length > 2) {
       content = matchValue.substring(1, matchValue.length - 1);
+      isInline = true;
     }
 
     final el = md.Element.text(_latexTag, matchValue);
@@ -68,15 +81,15 @@ class LatexNode extends SpanNode {
       return TextSpan(style: style, text: displayText);
     }
 
-    final latex = Math.tex(
-      content,
-      mathStyle: isInline ? MathStyle.text : MathStyle.display,
-      textStyle: style,
-      textScaleFactor: isInline ? _inlineMathScaleFactor : 1,
-      onErrorFallback: (error) {
-        return Text(displayText, style: style.copyWith(color: Colors.red));
-      },
-    );
+    final latex = isInline
+        ? Math.tex(
+            content,
+            mathStyle: MathStyle.text,
+            textStyle: style,
+            textScaleFactor: _inlineMathScaleFactor,
+            onErrorFallback: (error) => _buildErrorFallback(displayText, style),
+          )
+        : _buildBlockMath(content, displayText, style);
 
     if (isInline) {
       return WidgetSpan(
@@ -88,15 +101,71 @@ class LatexNode extends SpanNode {
       );
     }
 
-    return WidgetSpan(
-      child: Container(
-        key: blockLatexKey,
-        width: double.infinity,
-        alignment: Alignment.center,
-        margin: const EdgeInsets.symmetric(vertical: 16),
-        child: SingleChildScrollView(
+    return WidgetSpan(child: latex);
+  }
+
+  /// 块级公式:优先按 TeX 断行点拆分为 Wrap 自动换行;不适用或异常时回落为横向滚动。
+  Widget _buildBlockMath(
+    String content,
+    String displayText,
+    TextStyle style,
+  ) {
+    final math = Math.tex(
+      content,
+      mathStyle: MathStyle.display,
+      textStyle: style,
+      onErrorFallback: (error) => _buildErrorFallback(displayText, style),
+    );
+
+    Widget child;
+    try {
+      final breaks = math.texBreak();
+      if (breaks.parts.length > 1) {
+        child = Wrap(
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 4,
+          runSpacing: 4,
+          children: breaks.parts.toList(growable: false),
+        );
+      } else {
+        child = SingleChildScrollView(
           scrollDirection: Axis.horizontal,
-          child: latex,
+          child: math,
+        );
+      }
+    } catch (_) {
+      child = SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: math,
+      );
+    }
+
+    final margin = (style.fontSize ?? 16) * 0.8;
+    return Container(
+      key: blockLatexKey,
+      width: double.infinity,
+      alignment: Alignment.center,
+      margin: EdgeInsets.symmetric(vertical: margin),
+      child: child,
+    );
+  }
+
+  /// 解析失败兜底:圆角浅底 + 等宽字体展示原始文本,便于定位问题公式。
+  Widget _buildErrorFallback(String displayText, TextStyle style) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.red.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.red.withValues(alpha: 0.4)),
+      ),
+      child: Text(
+        displayText,
+        style: style.copyWith(
+          color: Colors.red,
+          fontFamily: 'monospace',
+          fontSize: (style.fontSize ?? 16) * 0.9,
         ),
       ),
     );
