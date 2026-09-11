@@ -89,7 +89,12 @@ class LatexNode extends SpanNode {
             textScaleFactor: _inlineMathScaleFactor,
             onErrorFallback: (error) => _buildErrorFallback(displayText, style),
           )
-        : _buildBlockMath(content, displayText, style);
+        : _buildBlockMath(
+            content,
+            displayText,
+            style,
+            insideTable: _isInsideTableCell(),
+          );
 
     if (isInline) {
       return WidgetSpan(
@@ -104,12 +109,26 @@ class LatexNode extends SpanNode {
     return WidgetSpan(child: latex);
   }
 
+  /// 是否处于表格单元格内。
+  /// 表格使用 IntrinsicColumnWidth 做固有宽度测量,而块级公式容器是
+  /// width=infinity,两者叠加会导致表格布局产生无限宽/零尺寸(正文空白)。
+  bool _isInsideTableCell() {
+    SpanNode? node = parent;
+    while (node != null) {
+      final typeName = node.runtimeType.toString();
+      if (typeName == 'TdNode' || typeName == 'ThNode') return true;
+      node = node.parent;
+    }
+    return false;
+  }
+
   /// 块级公式:优先按 TeX 断行点拆分为 Wrap 自动换行;不适用或异常时回落为横向滚动。
   Widget _buildBlockMath(
     String content,
     String displayText,
-    TextStyle style,
-  ) {
+    TextStyle style, {
+    bool insideTable = false,
+  }) {
     final math = Math.tex(
       content,
       mathStyle: MathStyle.display,
@@ -141,10 +160,12 @@ class LatexNode extends SpanNode {
       );
     }
 
-    final margin = (style.fontSize ?? 16) * 0.8;
+    final margin = insideTable ? 4.0 : (style.fontSize ?? 16) * 0.8;
     return Container(
       key: blockLatexKey,
-      width: double.infinity,
+      // 表格单元格内不能使用无限宽(会破坏 IntrinsicColumnWidth 测量),
+      // 改为收缩布局 + 横向滚动
+      width: insideTable ? null : double.infinity,
       alignment: Alignment.center,
       margin: EdgeInsets.symmetric(vertical: margin),
       child: child,
