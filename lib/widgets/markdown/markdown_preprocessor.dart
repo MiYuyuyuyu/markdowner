@@ -142,11 +142,33 @@ int? _findClosingRun(String line, int from, String char, int length) {
     if (current == r'$') {
       final isDouble = index + 1 < line.length && line[index + 1] == r'$';
       if (isDouble) {
-        // 块公式只在行首(允许前导空白)开启,避免正文中杂散的 $$ 劫持全文;
-        // 关闭可以在任意位置。
-        if (inBlockMath || index <= leadingWhitespaceEnd) {
-          inBlockMath = !inBlockMath;
+        if (inBlockMath) {
+          // 块公式内:$$ 关闭
+          inBlockMath = false;
+          buffer.write(r'$$');
+          index += 2;
+          continue;
         }
+        final closeIdx = line.indexOf(r'$$', index + 2);
+        if (index <= leadingWhitespaceEnd || closeIdx >= 0) {
+          // 行首开启(可跨行)或行中自包含($$...$$ 在同一行闭合):
+          // 内容中的 | 保护为 token。自包含不改变全局块状态;
+          // 行首且未在同行闭合时开启跨行块公式。
+          final end = closeIdx >= 0 ? closeIdx + 2 : line.length;
+          for (var i = index; i < end; i++) {
+            if (line[i] == '|') {
+              buffer.write(latexPipeToken);
+            } else {
+              buffer.write(line[i]);
+            }
+          }
+          if (closeIdx < 0) {
+            inBlockMath = true;
+          }
+          index = end;
+          continue;
+        }
+        // 行中孤立的 $$:原样保留,不开启状态(防止污染后续表格)
         buffer.write(r'$$');
         index += 2;
         continue;

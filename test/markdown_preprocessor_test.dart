@@ -21,6 +21,12 @@ void main() {
       expect(result, contains(latexPipeToken));
     });
 
+    test(r'self-contained $$...$$ mid-line protects pipes only inside', () {
+      final result = normalizeMarkdownForParsing(r'| $$a|b$$ | 文字 |');
+      expect(result, contains(latexPipeToken)); // 公式内的 | 被保护
+      expect(result, contains(r'| 文字 |')); // 公式外的管道保持原样
+    });
+
     test(r'inline \( \) math protects pipes', () {
       final result = normalizeMarkdownForParsing(r'\(a|b\)');
       expect(result, contains(latexPipeToken));
