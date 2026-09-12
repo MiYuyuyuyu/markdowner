@@ -10,7 +10,7 @@
 ; 注意:版本号需与 pubspec.yaml 的 version 保持同步。
 
 #define MyAppName "Markdown Reader"
-#define MyAppVersion "0.1.2"
+#define MyAppVersion "0.1.6"
 #define MyAppPublisher "MarkdownReader"
 #define MyAppExeName "markdown_app.exe"
 #define ReleaseDir "..\build\windows\x64\runner\Release"

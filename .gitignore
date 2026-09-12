@@ -46,3 +46,4 @@ app.*.map.json
 myapp.jks
 BUILD_APK.md
 .zcode/
+build.md
