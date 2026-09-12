@@ -29,6 +29,11 @@ class _FileExplorerState extends State<FileExplorer> {
   bool _recentFoldersExpanded = true;
   bool _recentFilesExpanded = true;
 
+  // 分区高度权重:目录树占侧栏比例、最近文件夹占下半区比例。
+  // 拖动分隔条调整,会话内记忆(不持久化,重启恢复默认)。
+  double _treeWeight = 0.55;
+  double _recentFoldersWeight = 0.45;
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -64,58 +69,108 @@ class _FileExplorerState extends State<FileExplorer> {
     final recentFolders = storageService.getRecentFolders();
     final hasWorkspace = workspace.root != null;
     final recentFiles = storageService.getRecentFiles();
-    // 目录树分区在最近文件之前也常驻:有工作区显示树,无工作区显示引导
-    final sections = <Widget>[
-      _Section(
-        title: hasWorkspace ? '目录' : '目录 (未打开)',
-        expanded: _treeExpanded,
-        onToggle: () => setState(() => _treeExpanded = !_treeExpanded),
-        child: hasWorkspace && _treeExpanded
-            ? const _FolderTree()
-            : (hasWorkspace
-                ? null
-                : const _SectionHint(text: '打开文件夹后在此浏览目录')),
-      ),
-      if (_supportsFolderBrowsing)
-        _Section(
-          title: '最近文件夹 (${recentFolders.length})',
-          expanded: _recentFoldersExpanded,
-          onToggle: () =>
-              setState(() => _recentFoldersExpanded = !_recentFoldersExpanded),
-          child: _recentFoldersExpanded
-              ? _RecentFoldersList(folders: recentFolders)
-              : null,
-        ),
-      _Section(
-        title: '最近文件 (${recentFiles.length})',
-        expanded: _recentFilesExpanded,
-        onToggle: () =>
-            setState(() => _recentFilesExpanded = !_recentFilesExpanded),
-        child:
-            _recentFilesExpanded ? _RecentFilesList(paths: recentFiles) : null,
-      ),
-    ];
 
-    return Column(
-      children: [
-        // 目录树占主要空间
-        Expanded(
-          flex: 5,
-          child: sections[0],
+    final treeSection = _Section(
+      title: hasWorkspace ? '目录' : '目录 (未打开)',
+      expanded: _treeExpanded,
+      onToggle: () => setState(() => _treeExpanded = !_treeExpanded),
+      child: hasWorkspace && _treeExpanded
+          ? const _FolderTree()
+          : (hasWorkspace
+              ? null
+              : const _SectionHint(text: '打开文件夹后在此浏览目录')),
+    );
+    final foldersSection = _Section(
+      title: '最近文件夹 (${recentFolders.length})',
+      expanded: _recentFoldersExpanded,
+      onToggle: () =>
+          setState(() => _recentFoldersExpanded = !_recentFoldersExpanded),
+      child: _recentFoldersExpanded
+          ? _RecentFoldersList(folders: recentFolders)
+          : null,
+    );
+    final filesSection = _Section(
+      title: '最近文件 (${recentFiles.length})',
+      expanded: _recentFilesExpanded,
+      onToggle: () =>
+          setState(() => _recentFilesExpanded = !_recentFilesExpanded),
+      child: _recentFilesExpanded ? _RecentFilesList(paths: recentFiles) : null,
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final totalHeight = constraints.maxHeight;
+        // 两条垂直分隔条各占 6px,从分区高度中扣除,避免溢出
+        final dividerCount = _supportsFolderBrowsing ? 2 : 1;
+        final dividerSpace = 6.0 * dividerCount;
+        final treeHeight = (totalHeight * _treeWeight)
+            .clamp(80.0, totalHeight - dividerSpace - 108.0);
+        final bottomHeight = totalHeight - treeHeight - dividerSpace;
+        final foldersHeight = _supportsFolderBrowsing
+            ? (bottomHeight * _recentFoldersWeight)
+                .clamp(60.0, bottomHeight - 66.0)
+            : 0.0;
+        final filesHeight = bottomHeight - foldersHeight - (_supportsFolderBrowsing ? 6.0 : 0.0);
+
+        return Column(
+          children: [
+            SizedBox(height: treeHeight, child: treeSection),
+            _VerticalDivider(
+              key: const ValueKey('tree-divider'),
+              onDragDelta: (dy) => setState(() {
+                _treeWeight = ((treeHeight + dy) / totalHeight)
+                    .clamp(80.0 / totalHeight, (totalHeight - dividerSpace - 108.0) / totalHeight);
+              }),
+            ),
+            if (_supportsFolderBrowsing) ...[
+              SizedBox(height: foldersHeight, child: foldersSection),
+              _VerticalDivider(
+                key: const ValueKey('folders-divider'),
+                onDragDelta: (dy) => setState(() {
+                  _recentFoldersWeight = ((foldersHeight + dy) / bottomHeight)
+                      .clamp(0.15, 0.85);
+                }),
+              ),
+            ],
+            SizedBox(height: filesHeight, child: filesSection),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// 垂直分隔条:上下拖动调整相邻分区高度
+class _VerticalDivider extends StatefulWidget {
+  final ValueChanged<double> onDragDelta;
+
+  const _VerticalDivider({required this.onDragDelta, super.key});
+
+  @override
+  State<_VerticalDivider> createState() => _VerticalDividerState();
+}
+
+class _VerticalDividerState extends State<_VerticalDivider> {
+  bool _active = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeUpDown,
+      onEnter: (_) => setState(() => _active = true),
+      onExit: (_) => setState(() => _active = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onVerticalDragUpdate: (details) => widget.onDragDelta(details.delta.dy),
+        child: Container(
+          width: double.infinity,
+          height: 6,
+          color: _active
+              ? colorScheme.primary.withValues(alpha: 0.5)
+              : Colors.transparent,
         ),
-        const Divider(height: 1),
-        // 最近分区各自限高,超出内部滚动
-        if (_supportsFolderBrowsing)
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 168),
-            child: sections[1],
-          ),
-        const Divider(height: 1),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 200),
-          child: sections[2],
-        ),
-      ],
+      ),
     );
   }
 }

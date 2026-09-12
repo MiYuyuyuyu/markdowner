@@ -242,4 +242,71 @@ void main() {
     expect(storageService.getRecentFolders(), isEmpty);
     expect(workspace.rootPath, root.path, reason: '移除记录不影响已打开的工作区');
   });
+
+  testWidgets('vertical dividers resize section heights', (tester) async {
+    final root = _createSampleFolder();
+    addTearDown(() => root.deleteSync(recursive: true));
+
+    SharedPreferences.setMockInitialValues({});
+    final storageService = await StorageService.init();
+    final settings = SettingsProvider(storageService);
+    final workspace = WorkspaceProvider(FileService(), storageService);
+    workspace.openFolder(root.path, persist: false);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          Provider<StorageService>.value(value: storageService),
+          ChangeNotifierProvider<SettingsProvider>.value(value: settings),
+          ChangeNotifierProvider(
+            create: (_) => TabManager(FileService(), storageService),
+          ),
+          ChangeNotifierProvider<WorkspaceProvider>.value(value: workspace),
+        ],
+        child: const MaterialApp(home: Scaffold(body: FileExplorer())),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 用分区标题的位置变化验证拖动效果(标题位置随分区边界移动)
+    final treeTitleBefore = tester.getTopLeft(find.text('目录')).dy;
+    final foldersTitleBefore =
+        tester.getTopLeft(find.textContaining('最近文件夹').first).dy;
+    expect(foldersTitleBefore, greaterThan(treeTitleBefore));
+
+    // 向下拖目录/最近区域分隔条 80px → 目录树变高,最近文件夹标题下移
+    await tester.drag(
+      find.byKey(const ValueKey('tree-divider')),
+      const Offset(0, 80),
+    );
+    await tester.pumpAndSettle();
+    final foldersTitleAfterDrag1 =
+        tester.getTopLeft(find.textContaining('最近文件夹').first).dy;
+    expect(foldersTitleAfterDrag1, greaterThan(foldersTitleBefore),
+        reason: '目录树变高后,最近文件夹分区应下移');
+
+    // 向上拖 60px,目录树变矮,最近文件夹标题应上移
+    await tester.drag(
+      find.byKey(const ValueKey('tree-divider')),
+      const Offset(0, -60),
+    );
+    await tester.pumpAndSettle();
+    final foldersTitleAfterDrag2 =
+        tester.getTopLeft(find.textContaining('最近文件夹').first).dy;
+    expect(foldersTitleAfterDrag2, lessThan(foldersTitleAfterDrag1),
+        reason: '目录树变矮后,最近文件夹分区应上移');
+
+    // 最近文件夹与最近文件之间:向下拖 → 最近文件标题下移
+    final filesTitleBefore =
+        tester.getTopLeft(find.textContaining('最近文件 (').first).dy;
+    await tester.drag(
+      find.byKey(const ValueKey('folders-divider')),
+      const Offset(0, 60),
+    );
+    await tester.pumpAndSettle();
+    final filesTitleAfter =
+        tester.getTopLeft(find.textContaining('最近文件 (').first).dy;
+    expect(filesTitleAfter, greaterThan(filesTitleBefore),
+        reason: '最近文件夹区变高后,最近文件分区应下移');
+  });
 }
