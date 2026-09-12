@@ -25,6 +25,13 @@ class WorkspaceProvider extends ChangeNotifier {
   /// 弹出系统文件夹选择器,返回所选路径(取消返回 null)
   Future<String?> openFolderPicker() => _fileService.pickDirectory();
 
+  /// 仅移除最近文件夹记录,不影响磁盘上的文件夹;
+  /// 若移除的是当前打开的工作区,目录树保持不动(记录与打开状态解耦)
+  Future<void> removeRecentFolder(String path) async {
+    await _storageService.removeRecentFolder(path);
+    notifyListeners();
+  }
+
   /// 启动时恢复上次打开的工作区
   void restoreLast() {
     final last = _storageService.getLastWorkspace();
