@@ -63,6 +63,12 @@ class StorageService {
     await setLastWorkspace(path);
   }
 
+  Future<void> removeRecentFolder(String path) async {
+    final folders = getRecentFolders();
+    folders.remove(path);
+    await _prefs.setStringList(_recentFoldersKey, folders);
+  }
+
   String? getLastWorkspace() {
     return _prefs.getString(_lastWorkspaceKey);
   }

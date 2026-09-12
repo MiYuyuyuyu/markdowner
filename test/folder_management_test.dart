@@ -107,7 +107,7 @@ void main() {
     });
   });
 
-  testWidgets('FileExplorer renders folder tree and opens file on tap', (
+  testWidgets('FileExplorer shows sections and opens file from tree', (
     tester,
   ) async {
     final root = _createSampleFolder();
@@ -133,11 +133,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 切换到目录模式(默认为最近模式)
-    await tester.tap(find.text('目录'));
-    await tester.pumpAndSettle();
-
-    // 目录模式下可见根下条目(sub 目录 + 支持的文件;py/隐藏/build 被过滤)
+    // 合并分区视图:目录树 + 最近文件分区同时可见
+    expect(find.text('目录'), findsOneWidget);
+    expect(find.text('最近文件 (0)'), findsOneWidget);
+    expect(find.text('最近文件夹 (0)'), findsOneWidget);
+    // 目录树条目可见(sub 目录 + 支持的文件;py/隐藏/build 被过滤)
     expect(find.text('sub'), findsOneWidget);
     expect(find.text('a.txt'), findsOneWidget);
     expect(find.text('b.md'), findsOneWidget);
@@ -156,7 +156,7 @@ void main() {
     expect(tabManager.activeTab?.title, 'b.md');
   });
 
-  testWidgets('FileExplorer recent mode still lists recent files', (
+  testWidgets('FileExplorer lists recent files section with remove', (
     tester,
   ) async {
     final root = _createSampleFolder();
@@ -185,16 +185,61 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    debugPrint('recent files: ${storageService.getRecentFiles()}');
-    debugPrint(
-        'text widgets: ${find.byType(Text).evaluate().map((e) => (e.widget as Text).data).where((d) => d != null).toList()}');
-    // 默认"最近"模式
     expect(find.text('recent.md'), findsOneWidget);
+    expect(find.text('最近文件 (1)'), findsOneWidget);
 
-    // 切到目录模式
-    await tester.tap(find.text('目录'));
+    // 点击 × 移除记录
+    await tester.tap(find.byTooltip('移除最近文件'));
     await tester.pumpAndSettle();
+    expect(storageService.getRecentFiles(), isEmpty);
     expect(find.text('recent.md'), findsNothing);
-    expect(find.textContaining('打开一个文件夹'), findsOneWidget);
+  });
+
+  testWidgets('FileExplorer recent folders section supports open and remove', (
+    tester,
+  ) async {
+    final root = _createSampleFolder();
+    addTearDown(() => root.deleteSync(recursive: true));
+
+    SharedPreferences.setMockInitialValues({});
+    final storageService = await StorageService.init();
+    await storageService.addRecentFolder(root.path);
+    final settings = SettingsProvider(storageService);
+    final workspace = WorkspaceProvider(FileService(), storageService);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          Provider<StorageService>.value(value: storageService),
+          ChangeNotifierProvider<SettingsProvider>.value(value: settings),
+          ChangeNotifierProvider(
+            create: (_) => TabManager(FileService(), storageService),
+          ),
+          ChangeNotifierProvider<WorkspaceProvider>.value(value: workspace),
+        ],
+        child: const MaterialApp(home: Scaffold(body: FileExplorer())),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final folderName =
+        root.path.replaceAll(Platform.pathSeparator, '/').split('/').last;
+    expect(find.text(folderName), findsOneWidget);
+    expect(find.textContaining('最近文件夹 (1)'), findsOneWidget);
+
+    // 点击最近文件夹 → 打开为工作区(目录树出现)
+    await tester.runAsync(() async {
+      await tester.tap(find.text(folderName), warnIfMissed: false);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    });
+    await tester.pump();
+    expect(workspace.rootPath, root.path);
+    expect(find.text('a.txt'), findsOneWidget);
+
+    // 点击 × → 仅移除记录,工作区保持打开
+    await tester.tap(find.byTooltip('移除最近文件夹记录'));
+    await tester.pumpAndSettle();
+    expect(storageService.getRecentFolders(), isEmpty);
+    expect(workspace.rootPath, root.path, reason: '移除记录不影响已打开的工作区');
   });
 }

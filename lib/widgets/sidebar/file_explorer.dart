@@ -12,6 +12,8 @@ import '../../services/storage_service.dart';
 /// Android scoped storage 下无法用 dart:io 列目录,隐藏"打开文件夹"入口
 bool get _supportsFolderBrowsing => !Platform.isAndroid;
 
+/// 侧边栏:目录树 + 最近文件夹 + 最近文件 的合并分区视图。
+/// 各分区可折叠;最近条目可移除记录(不影响磁盘文件)。
 class FileExplorer extends StatefulWidget {
   /// 面板宽度(由拖动分隔条调整,持久化于设置)
   final double width;
@@ -22,10 +24,10 @@ class FileExplorer extends StatefulWidget {
   State<FileExplorer> createState() => _FileExplorerState();
 }
 
-enum _ExplorerMode { tree, recent }
-
 class _FileExplorerState extends State<FileExplorer> {
-  _ExplorerMode _mode = _ExplorerMode.recent;
+  bool _treeExpanded = true;
+  bool _recentFoldersExpanded = true;
+  bool _recentFilesExpanded = true;
 
   @override
   Widget build(BuildContext context) {
@@ -46,39 +48,74 @@ class _FileExplorerState extends State<FileExplorer> {
           const Divider(height: 1),
           const _OpenActions(),
           const Divider(height: 1),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-            child: SegmentedButton<_ExplorerMode>(
-              style: const ButtonStyle(
-                visualDensity: VisualDensity.compact,
-                textStyle: WidgetStatePropertyAll(
-                  TextStyle(fontSize: 12),
-                ),
-              ),
-              segments: const [
-                ButtonSegment(
-                  value: _ExplorerMode.tree,
-                  label: Text('目录'),
-                  icon: Icon(Icons.folder_outlined, size: 16),
-                ),
-                ButtonSegment(
-                  value: _ExplorerMode.recent,
-                  label: Text('最近'),
-                  icon: Icon(Icons.history, size: 16),
-                ),
-              ],
-              selected: {_mode},
-              onSelectionChanged: (selection) =>
-                  setState(() => _mode = selection.first),
-            ),
-          ),
           Expanded(
-            child: _mode == _ExplorerMode.tree
-                ? const _FolderTree()
-                : const _RecentFilesList(),
+            child: _buildSections(context),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildSections(BuildContext context) {
+    final workspace = context.watch<WorkspaceProvider>();
+    // 监听 TabManager:移除最近文件等操作通过它通知刷新
+    context.watch<TabManager>();
+    final storageService = context.read<StorageService>();
+    final recentFolders = storageService.getRecentFolders();
+    final hasWorkspace = workspace.root != null;
+    final recentFiles = storageService.getRecentFiles();
+    // 目录树分区在最近文件之前也常驻:有工作区显示树,无工作区显示引导
+    final sections = <Widget>[
+      _Section(
+        title: hasWorkspace ? '目录' : '目录 (未打开)',
+        expanded: _treeExpanded,
+        onToggle: () => setState(() => _treeExpanded = !_treeExpanded),
+        child: hasWorkspace && _treeExpanded
+            ? const _FolderTree()
+            : (hasWorkspace
+                ? null
+                : const _SectionHint(text: '打开文件夹后在此浏览目录')),
+      ),
+      if (_supportsFolderBrowsing)
+        _Section(
+          title: '最近文件夹 (${recentFolders.length})',
+          expanded: _recentFoldersExpanded,
+          onToggle: () =>
+              setState(() => _recentFoldersExpanded = !_recentFoldersExpanded),
+          child: _recentFoldersExpanded
+              ? _RecentFoldersList(folders: recentFolders)
+              : null,
+        ),
+      _Section(
+        title: '最近文件 (${recentFiles.length})',
+        expanded: _recentFilesExpanded,
+        onToggle: () =>
+            setState(() => _recentFilesExpanded = !_recentFilesExpanded),
+        child:
+            _recentFilesExpanded ? _RecentFilesList(paths: recentFiles) : null,
+      ),
+    ];
+
+    return Column(
+      children: [
+        // 目录树占主要空间
+        Expanded(
+          flex: 5,
+          child: sections[0],
+        ),
+        const Divider(height: 1),
+        // 最近分区各自限高,超出内部滚动
+        if (_supportsFolderBrowsing)
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 168),
+            child: sections[1],
+          ),
+        const Divider(height: 1),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 200),
+          child: sections[2],
+        ),
+      ],
     );
   }
 }
@@ -185,6 +222,84 @@ class _ActionButton extends StatelessWidget {
   }
 }
 
+/// 可折叠分区标题(仿 Cursor:标题 + 数量 + 折叠箭头)
+class _Section extends StatelessWidget {
+  final String title;
+  final bool expanded;
+  final VoidCallback onToggle;
+  final Widget? child;
+
+  const _Section({
+    required this.title,
+    required this.expanded,
+    required this.onToggle,
+    this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        InkWell(
+          onTap: onToggle,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+            child: Row(
+              children: [
+                AnimatedRotation(
+                  turns: expanded ? 0.25 : 0,
+                  duration: const Duration(milliseconds: 150),
+                  child: Icon(
+                    Icons.keyboard_arrow_right,
+                    size: 16,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.onSurfaceVariant,
+                      letterSpacing: 0.5,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (expanded && child != null) Expanded(child: child!),
+        if (expanded && child == null) const SizedBox(height: 4),
+      ],
+    );
+  }
+}
+
+class _SectionHint extends StatelessWidget {
+  final String text;
+
+  const _SectionHint({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(32, 2, 16, 8),
+      child: Text(
+        text,
+        style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+      ),
+    );
+  }
+}
+
 /// 目录树(按展开状态展平渲染)
 class _FolderTree extends StatelessWidget {
   const _FolderTree();
@@ -192,28 +307,15 @@ class _FolderTree extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final workspace = context.watch<WorkspaceProvider>();
-    final colorScheme = Theme.of(context).colorScheme;
     final root = workspace.root;
 
     if (root == null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text(
-            '打开一个文件夹\n以浏览目录',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 13,
-              color: colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-      );
+      return const _SectionHint(text: '打开文件夹后在此浏览目录');
     }
 
     final rows = workspace.flattenVisible();
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.only(bottom: 4),
       itemCount: rows.length,
       itemBuilder: (context, index) {
         final (node, depth) = rows[index];
@@ -291,109 +393,141 @@ class _TreeRow extends StatelessWidget {
   }
 }
 
-class _RecentFilesList extends StatelessWidget {
-  const _RecentFilesList();
+/// 最近文件夹列表:点击打开工作区,× 移除记录
+class _RecentFoldersList extends StatelessWidget {
+  final List<String> folders;
+
+  const _RecentFoldersList({required this.folders});
 
   @override
   Widget build(BuildContext context) {
-    context.watch<TabManager>();
-    final storageService = context.read<StorageService>();
-    final recentFiles = storageService.getRecentFiles();
-
-    if (recentFiles.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text(
-            '暂无最近文件',
-            style: TextStyle(
-              fontSize: 13,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
+    if (folders.isEmpty) {
+      return const _SectionHint(text: '暂无最近文件夹');
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 4),
+      itemCount: folders.length,
+      itemBuilder: (context, index) {
+        final path = folders[index];
+        final name = FileService.extractFileName(path);
+        final colorScheme = Theme.of(context).colorScheme;
+        return InkWell(
+          onTap: () {
+            context.read<WorkspaceProvider>().openFolder(path);
+          },
+          child: Padding(
+            padding: const EdgeInsets.only(left: 24),
+            child: Row(
+              children: [
+                Icon(Icons.folder_outlined,
+                    size: 15, color: colorScheme.primary),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    name,
+                    style: TextStyle(
+                        fontSize: 13, color: colorScheme.onSurface),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                IconButton(
+                  tooltip: '移除最近文件夹记录',
+                  icon: Icon(
+                    Icons.close,
+                    size: 16,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints.tightFor(width: 44, height: 36),
+                  onPressed: () => context
+                      .read<WorkspaceProvider>()
+                      .removeRecentFolder(path),
+                ),
+              ],
             ),
           ),
-        ),
-      );
-    }
-
-    return ListView.builder(
-      padding: EdgeInsets.zero,
-      itemCount: recentFiles.length,
-      itemBuilder: (context, index) {
-        final path = recentFiles[index];
-        return _RecentFileItem(path: path);
+        );
       },
     );
   }
 }
 
-class _RecentFileItem extends StatelessWidget {
-  final String path;
+/// 最近文件列表:点击打开,× 移除记录
+class _RecentFilesList extends StatelessWidget {
+  final List<String> paths;
 
-  const _RecentFileItem({required this.path});
+  const _RecentFilesList({required this.paths});
 
   @override
   Widget build(BuildContext context) {
-    final fileName = FileService.extractFileName(path);
-    final dirPath = path.substring(0, path.length - fileName.length - 1);
-    final colorScheme = Theme.of(context).colorScheme;
+    if (paths.isEmpty) {
+      return const _SectionHint(text: '暂无最近文件');
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 4),
+      itemCount: paths.length,
+      itemBuilder: (context, index) {
+        final path = paths[index];
+        final fileName = FileService.extractFileName(path);
+        final dirPath =
+            path.substring(0, path.length - fileName.length - 1);
+        final colorScheme = Theme.of(context).colorScheme;
 
-    return InkWell(
-      onTap: () => _openFile(context),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        child: Row(
-          children: [
-            Icon(
-              Icons.description_outlined,
-              size: 16,
-              color: colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    fileName,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: colorScheme.onSurface,
-                    ),
-                    overflow: TextOverflow.ellipsis,
+        return InkWell(
+          onTap: () => context.read<TabManager>().openFileFromPath(path),
+          child: Padding(
+            padding: const EdgeInsets.only(left: 24),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.description_outlined,
+                  size: 16,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        fileName,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: colorScheme.onSurface,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        dirPath,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ),
-                  Text(
-                    dirPath,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                    overflow: TextOverflow.ellipsis,
+                ),
+                IconButton(
+                  tooltip: '移除最近文件',
+                  icon: Icon(
+                    Icons.close,
+                    size: 16,
+                    color: colorScheme.onSurfaceVariant,
                   ),
-                ],
-              ),
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints.tightFor(width: 44, height: 36),
+                  onPressed: () =>
+                      context.read<TabManager>().removeRecentFile(path),
+                ),
+              ],
             ),
-            IconButton(
-              tooltip: '移除最近文件',
-              icon: Icon(
-                Icons.close,
-                size: 16,
-                color: colorScheme.onSurfaceVariant,
-              ),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 44, height: 44),
-              onPressed: () => _removeRecentFile(context),
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
-  }
-
-  void _openFile(BuildContext context) {
-    context.read<TabManager>().openFileFromPath(path);
-  }
-
-  Future<void> _removeRecentFile(BuildContext context) async {
-    await context.read<TabManager>().removeRecentFile(path);
   }
 }
