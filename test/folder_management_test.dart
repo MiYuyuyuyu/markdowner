@@ -309,4 +309,54 @@ void main() {
     expect(filesTitleAfter, greaterThan(filesTitleBefore),
         reason: '最近文件夹区变高后,最近文件分区应下移');
   });
+
+  testWidgets('rapid same-frame drag events do not lose increments', (
+    tester,
+  ) async {
+    final root = _createSampleFolder();
+    addTearDown(() => root.deleteSync(recursive: true));
+
+    SharedPreferences.setMockInitialValues({});
+    final storageService = await StorageService.init();
+    final settings = SettingsProvider(storageService);
+    final workspace = WorkspaceProvider(FileService(), storageService);
+    workspace.openFolder(root.path, persist: false);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          Provider<StorageService>.value(value: storageService),
+          ChangeNotifierProvider<SettingsProvider>.value(value: settings),
+          ChangeNotifierProvider(
+            create: (_) => TabManager(FileService(), storageService),
+          ),
+          ChangeNotifierProvider<WorkspaceProvider>.value(value: workspace),
+        ],
+        child: const MaterialApp(home: Scaffold(body: FileExplorer())),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 模拟高轮询率鼠标:同一帧内连续多次小位移 move 事件
+    // (帧未 pump,事件共享同一闭包)。修复前增量互相覆盖,
+    // 拖动 150px 只生效最后一次的事件位移。
+    final foldersTitleBefore =
+        tester.getTopLeft(find.textContaining('最近文件夹').first).dy;
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byKey(const ValueKey('tree-divider'))),
+    );
+    for (var i = 0; i < 10; i++) {
+      await gesture.moveBy(const Offset(0, 15));
+    }
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    final foldersTitleAfter =
+        tester.getTopLeft(find.textContaining('最近文件夹').first).dy;
+    final moved = foldersTitleAfter - foldersTitleBefore;
+    expect(moved, greaterThan(100),
+        reason: '同帧 10 次 x15px 事件应累计移动约 150px,'
+            '实际仅移动 \$moved px,说明增量丢失');
+  });
 }

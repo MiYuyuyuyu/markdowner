@@ -103,12 +103,18 @@ class _FileExplorerState extends State<FileExplorer> {
         // 两条垂直分隔条各占 6px,从分区高度中扣除,避免溢出
         final dividerCount = _supportsFolderBrowsing ? 2 : 1;
         final dividerSpace = 6.0 * dividerCount;
-        final treeHeight = (totalHeight * _treeWeight)
-            .clamp(80.0, totalHeight - dividerSpace - 108.0);
+        // 空间不足时 clamp 上限可能小于下限,double.clamp 会抛 ArgumentError,需防御
+        double safeClamp(double value, double min, double max) {
+          final effectiveMax = max < min ? min : max;
+          return value.clamp(min, effectiveMax);
+        }
+
+        final treeHeight = safeClamp(totalHeight * _treeWeight, 80.0,
+            totalHeight - dividerSpace - 108.0);
         final bottomHeight = totalHeight - treeHeight - dividerSpace;
         final foldersHeight = _supportsFolderBrowsing
-            ? (bottomHeight * _recentFoldersWeight)
-                .clamp(60.0, bottomHeight - 66.0)
+            ? safeClamp(
+                bottomHeight * _recentFoldersWeight, 60.0, bottomHeight - 66.0)
             : 0.0;
         final filesHeight = bottomHeight - foldersHeight - (_supportsFolderBrowsing ? 6.0 : 0.0);
 
@@ -117,9 +123,15 @@ class _FileExplorerState extends State<FileExplorer> {
             SizedBox(height: treeHeight, child: treeSection),
             _VerticalDivider(
               key: const ValueKey('tree-divider'),
+              // 注意:必须基于 state 字段累加,不能捕获 build 时的
+              // treeHeight 局部变量——高轮询率鼠标一帧内触发多次
+              // move 事件,闭包旧值会让增量互相覆盖(拖动极慢)
               onDragDelta: (dy) => setState(() {
-                _treeWeight = ((treeHeight + dy) / totalHeight)
-                    .clamp(80.0 / totalHeight, (totalHeight - dividerSpace - 108.0) / totalHeight);
+                _treeWeight = safeClamp(
+                  _treeWeight + dy / totalHeight,
+                  80.0 / totalHeight,
+                  (totalHeight - dividerSpace - 108.0) / totalHeight,
+                );
               }),
             ),
             if (_supportsFolderBrowsing) ...[
@@ -127,8 +139,11 @@ class _FileExplorerState extends State<FileExplorer> {
               _VerticalDivider(
                 key: const ValueKey('folders-divider'),
                 onDragDelta: (dy) => setState(() {
-                  _recentFoldersWeight = ((foldersHeight + dy) / bottomHeight)
-                      .clamp(0.15, 0.85);
+                  _recentFoldersWeight = safeClamp(
+                    _recentFoldersWeight + dy / bottomHeight,
+                    0.15,
+                    0.85,
+                  );
                 }),
               ),
             ],
