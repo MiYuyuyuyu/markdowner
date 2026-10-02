@@ -326,6 +326,94 @@ class _HomeScreenState extends State<HomeScreen> {
     final colorScheme = Theme.of(context).colorScheme;
     final hasContent = tabManager.activeTab != null;
     final isWide = tier == WindowTier.expanded;
+    final isCompact = tier == WindowTier.compact;
+
+    // compact 档宽度有限:次要操作全部收进溢出菜单,
+    // 否则 6 个图标 + 字号文本互相挤压无法点击
+    final actions = isCompact
+        ? <Widget>[
+            if (hasContent)
+              IconButton(
+                icon: const Icon(Icons.search),
+                tooltip: '文档内搜索',
+                onPressed: () => setState(
+                    () => _documentSearchVisible = !_documentSearchVisible),
+              ),
+            if (hasContent)
+              Builder(
+                builder: (ctx) => IconButton(
+                  icon: Icon(
+                    settings.showToc
+                        ? Icons.list_alt
+                        : Icons.list_alt_outlined,
+                  ),
+                  onPressed: () {
+                    if (settings.showToc) {
+                      settings.closeToc();
+                    } else {
+                      Scaffold.of(ctx).openEndDrawer();
+                    }
+                  },
+                  tooltip: '文档目录',
+                ),
+              ),
+            _OverflowActionsMenu(
+              settings: settings,
+              tabManager: tabManager,
+              onQuickOpen: _showQuickOpen,
+              onGlobalSearch: _showGlobalSearch,
+            ),
+            const SizedBox(width: 4),
+          ]
+        : <Widget>[
+            if (hasContent)
+              IconButton(
+                icon: const Icon(Icons.search),
+                tooltip: '文档内搜索 (Ctrl+F)',
+                onPressed: () => setState(
+                    () => _documentSearchVisible = !_documentSearchVisible),
+              ),
+            if (tabManager.hasTabs)
+              IconButton(
+                icon: const Icon(Icons.manage_search),
+                tooltip: '跨标签搜索 (Ctrl+Shift+F)',
+                onPressed: _showGlobalSearch,
+              ),
+            IconButton(
+              icon: const Icon(Icons.file_open),
+              tooltip: '快速打开 (Ctrl+P)',
+              onPressed: _showQuickOpen,
+            ),
+            if (hasContent)
+              Builder(
+                builder: (ctx) => IconButton(
+                  icon: Icon(
+                    settings.showToc ? Icons.list_alt : Icons.list_alt_outlined,
+                  ),
+                  onPressed: () {
+                    if (tier == WindowTier.compact) {
+                      if (settings.showToc) {
+                        settings.closeToc();
+                      } else {
+                        Scaffold.of(ctx).openEndDrawer();
+                      }
+                    } else {
+                      settings.toggleToc();
+                    }
+                  },
+                  tooltip: '文档目录',
+                ),
+              ),
+            _FontSizeControls(settings: settings, colorScheme: colorScheme),
+            IconButton(
+              icon: Icon(
+                settings.isDarkMode ? Icons.light_mode : Icons.dark_mode,
+              ),
+              onPressed: settings.toggleTheme,
+              tooltip: settings.isDarkMode ? '切换亮色主题' : '切换暗色主题',
+            ),
+            const SizedBox(width: 8),
+          ];
 
     return AppBar(
       title: const Text('Markdown Reader', style: TextStyle(fontSize: 16)),
@@ -342,55 +430,7 @@ class _HomeScreenState extends State<HomeScreen> {
           tooltip: '切换侧边栏',
         ),
       ),
-      actions: [
-        if (hasContent)
-          IconButton(
-            icon: const Icon(Icons.search),
-            tooltip: '文档内搜索 (Ctrl+F)',
-            onPressed: () =>
-                setState(() => _documentSearchVisible = !_documentSearchVisible),
-          ),
-        if (tabManager.hasTabs)
-          IconButton(
-            icon: const Icon(Icons.manage_search),
-            tooltip: '跨标签搜索 (Ctrl+Shift+F)',
-            onPressed: _showGlobalSearch,
-          ),
-        IconButton(
-          icon: const Icon(Icons.file_open),
-          tooltip: '快速打开 (Ctrl+P)',
-          onPressed: _showQuickOpen,
-        ),
-        if (hasContent)
-          Builder(
-            builder: (ctx) => IconButton(
-              icon: Icon(
-                settings.showToc ? Icons.list_alt : Icons.list_alt_outlined,
-              ),
-              onPressed: () {
-                if (tier == WindowTier.compact) {
-                  if (settings.showToc) {
-                    settings.closeToc();
-                  } else {
-                    Scaffold.of(ctx).openEndDrawer();
-                  }
-                } else {
-                  settings.toggleToc();
-                }
-              },
-              tooltip: '文档目录',
-            ),
-          ),
-        _FontSizeControls(settings: settings, colorScheme: colorScheme),
-        IconButton(
-          icon: Icon(
-            settings.isDarkMode ? Icons.light_mode : Icons.dark_mode,
-          ),
-          onPressed: settings.toggleTheme,
-          tooltip: settings.isDarkMode ? '切换亮色主题' : '切换暗色主题',
-        ),
-        const SizedBox(width: 8),
-      ],
+      actions: actions,
     );
   }
 
@@ -601,6 +641,102 @@ class _FontSizeControls extends StatelessWidget {
           onPressed: settings.increaseFontSize,
           tooltip: '放大字号',
         ),
+      ],
+    );
+  }
+}
+
+/// compact 档的"更多操作"菜单:收纳快速打开、跨标签搜索、
+/// 字号调节与主题切换,保证窄屏下 AppBar 不拥挤。
+class _OverflowActionsMenu extends StatelessWidget {
+  final SettingsProvider settings;
+  final TabManager tabManager;
+  final VoidCallback onQuickOpen;
+  final VoidCallback onGlobalSearch;
+
+  const _OverflowActionsMenu({
+    required this.settings,
+    required this.tabManager,
+    required this.onQuickOpen,
+    required this.onGlobalSearch,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      tooltip: '更多操作',
+      icon: const Icon(Icons.more_vert),
+      onSelected: (key) {
+        switch (key) {
+          case 'quickOpen':
+            onQuickOpen();
+          case 'globalSearch':
+            onGlobalSearch();
+          case 'fontDecrease':
+            settings.decreaseFontSize();
+          case 'fontIncrease':
+            settings.increaseFontSize();
+          case 'theme':
+            settings.toggleTheme();
+        }
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          value: 'quickOpen',
+          child: _MenuItemRow(icon: Icons.file_open, label: '快速打开'),
+        ),
+        if (tabManager.hasTabs)
+          PopupMenuItem(
+            value: 'globalSearch',
+            child: _MenuItemRow(icon: Icons.manage_search, label: '跨标签搜索'),
+          ),
+        const PopupMenuDivider(),
+        PopupMenuItem(
+          value: 'fontDecrease',
+          child: _MenuItemRow(icon: Icons.text_decrease, label: '缩小字号'),
+        ),
+        PopupMenuItem(
+          enabled: false,
+          child: Center(
+            child: Text(
+              '字号 ${settings.fontSize.toInt()}',
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ),
+        PopupMenuItem(
+          value: 'fontIncrease',
+          child: _MenuItemRow(icon: Icons.text_increase, label: '放大字号'),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem(
+          value: 'theme',
+          child: _MenuItemRow(
+            icon: settings.isDarkMode ? Icons.light_mode : Icons.dark_mode,
+            label: settings.isDarkMode ? '切换亮色主题' : '切换暗色主题',
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MenuItemRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _MenuItemRow({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 20),
+        const SizedBox(width: 12),
+        Text(label),
       ],
     );
   }

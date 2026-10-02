@@ -8,6 +8,7 @@ import 'package:markdown_app/models/reading_session.dart';
 import 'package:markdown_app/theme/app_theme.dart';
 import 'package:markdown_app/providers/settings_provider.dart';
 import 'package:markdown_app/screens/home_screen.dart';
+import 'package:markdown_app/widgets/markdown/mermaid_support.dart';
 import 'package:markdown_app/widgets/markdown/markdown_viewer.dart';
 import 'package:markdown_app/widgets/welcome/welcome_page.dart';
 import 'package:markdown_app/widgets/navigation/toc_panel.dart';
@@ -417,7 +418,7 @@ void main() {
     expect(bulletFinder, findsNWidgets(3));
   });
 
-  testWidgets('MarkdownViewer renders mermaid blocks as images', (
+  testWidgets('MarkdownViewer renders mermaid blocks via local webview', (
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({});
@@ -443,7 +444,12 @@ graph TD
       ),
     );
 
-    expect(find.byType(Image), findsOneWidget);
+    // 本地 WebView 渲染(不再走 mermaid.ink 在线服务)
+    expect(find.byType(MermaidView), findsOneWidget);
+    // 测试环境没有 WebView 插件,平台调用永久挂起:10 秒初始化超时后
+    // 应降级为失败卡片,不允许崩溃(fake async 下为虚拟时间,不真实等待)
+    await tester.pump(const Duration(seconds: 11));
+    expect(find.text('Mermaid 图表渲染失败'), findsOneWidget);
   });
 
   testWidgets('TocPanel scrolls MarkdownViewer when a heading is tapped', (
@@ -770,6 +776,46 @@ graph TD
     );
 
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('HomeScreen compact tier collapses secondary actions into menu', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    SharedPreferences.setMockInitialValues({});
+    final storageService = await StorageService.init();
+    final settings = SettingsProvider(storageService);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          Provider<StorageService>.value(value: storageService),
+          ChangeNotifierProvider<SettingsProvider>.value(value: settings),
+          ChangeNotifierProvider(
+            create: (_) => TabManager(FileService(), storageService),
+          ),
+        ],
+        child: const MaterialApp(home: HomeScreen()),
+      ),
+    );
+
+    // 窄屏:次要操作(快速打开/字号/主题)全部收进溢出菜单
+    expect(find.byIcon(Icons.more_vert), findsOneWidget);
+    expect(find.byIcon(Icons.dark_mode), findsNothing);
+    expect(find.byIcon(Icons.file_open), findsNothing);
+
+    // 菜单里的字号调节生效
+    await tester.tap(find.byIcon(Icons.more_vert));
+    await tester.pumpAndSettle();
+    expect(find.text('放大字号'), findsOneWidget);
+
+    final before = settings.fontSize;
+    await tester.tap(find.text('放大字号'));
+    await tester.pumpAndSettle();
+    expect(settings.fontSize, before + 2);
   });
 
   testWidgets('HomeScreen binds ctrl+shift+= and numpad zoom shortcuts', (

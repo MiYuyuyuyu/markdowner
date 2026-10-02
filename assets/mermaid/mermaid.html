@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; background: transparent; }
+  #container { width: 100%; }
+  #container svg { display: block; margin: 0 auto; }
+</style>
+</head>
+<body>
+<div id="container"></div>
+<script src="mermaid.min.js"></script>
+<script>
+(function () {
+  var lastKey = null;
+  var observer = null;
+
+  function post(message) {
+    // Windows(WebView2) 与 Android(webview_flutter) 的消息通道不同
+    if (window.chrome && window.chrome.webview) {
+      window.chrome.webview.postMessage(message);
+      return;
+    }
+    if (window.FlutterMermaidChannel) {
+      window.FlutterMermaidChannel.postMessage(message);
+    }
+  }
+
+  function reportHeight() {
+    var el = document.getElementById('container');
+    if (!el) return;
+    var height = Math.ceil(el.getBoundingClientRect().height);
+    if (height > 0) post('height:' + height);
+  }
+
+  function observeContainer() {
+    var el = document.getElementById('container');
+    if (observer || !el || typeof ResizeObserver === 'undefined') return;
+    observer = new ResizeObserver(function () { reportHeight(); });
+    observer.observe(el);
+  }
+
+  window.renderMermaid = function (encodedCode, theme, background) {
+    var code;
+    try {
+      code = decodeURIComponent(encodedCode);
+    } catch (e) {
+      post('error:' + e);
+      return;
+    }
+    var key = theme + '|' + code;
+    if (key === lastKey) return;
+    lastKey = key;
+    document.body.style.background = background;
+    var el = document.getElementById('container');
+    el.innerHTML = '';
+    try {
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: theme,
+        securityLevel: 'strict',
+        flowchart: { useMaxWidth: true },
+        sequence: { useMaxWidth: true },
+        gantt: { useMaxWidth: true }
+      });
+    } catch (e) {}
+    mermaid.render('mmd-' + Date.now(), code).then(function (result) {
+      if (key !== lastKey) return;
+      el.innerHTML = result.svg;
+      observeContainer();
+      requestAnimationFrame(reportHeight);
+      // 字体加载完成后高度可能变化,延迟再上报一次
+      setTimeout(reportHeight, 150);
+      setTimeout(reportHeight, 500);
+    }).catch(function (err) {
+      lastKey = null;
+      var message = err && err.message ? err.message : String(err);
+      post('error:' + message);
+    });
+  };
+
+  post('pageReady');
+})();
+</script>
+</body>
+</html>

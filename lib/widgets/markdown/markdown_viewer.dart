@@ -1,5 +1,3 @@
-import 'dart:io' show Platform;
-
 import 'package:flutter/material.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'package:markdown_widget/markdown_widget.dart';
@@ -254,15 +252,6 @@ class _MarkdownViewerState extends State<MarkdownViewer> {
 
     final mermaidData = widget.preprocessed ? widget.data : normalizeMermaidBlocks(widget.data);
     final processedData = widget.preprocessed ? widget.data : normalizeMarkdownForParsing(mermaidData);
-
-    final providers = extractMermaidImageProviders(mermaidData);
-    if (providers.isNotEmpty && !Platform.environment.containsKey('FLUTTER_TEST')) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        for (final provider in providers) {
-          precacheImage(provider, context);
-        }
-      });
-    }
 
     return NotificationListener<ScrollNotification>(
       onNotification: _handleScrollNotification,

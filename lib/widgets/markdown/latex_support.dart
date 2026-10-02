@@ -9,6 +9,13 @@ import 'markdown_render_keys.dart';
 const _latexTag = 'latex';
 const _inlineMathScaleFactor = 1.12;
 
+// 已知问题(截至 flutter_math_fork 0.7.4,已为最新版):真机上含分式/重音
+// 符号的公式在特定字号(如 14)下会触发 debug 断言
+// "RenderResetDimension does not meet its constraints"(符号实际高度与
+// 行最小高度相差约 1px)。该断言仅 debug 生效,release 布局不受影响;
+// 测试环境因字体度量不同无法复现。test/math_layout_test.dart 保留这些
+// 构造作为回归防线。
+
 SpanNodeGeneratorWithTag latexGenerator = SpanNodeGeneratorWithTag(
   tag: _latexTag,
   generator: (e, config, visitor) =>
