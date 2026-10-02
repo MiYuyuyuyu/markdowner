@@ -42,63 +42,18 @@
     observer.observe(el);
   }
 
-  // 把当前 SVG 高清栅格化为 PNG:点击图表放大查看时由 Flutter 调用。
-  // 优先用 viewBox 固有尺寸(mermaid 布局的自然宽度),限制倍数与总像素,
-  // 避免 PNG 传输与图片解码内存失控。
-  window.snapshotMermaid = function () {
-    var el = document.getElementById('container');
-    var svg = el && el.querySelector('svg');
-    if (!svg) {
-      post('snapshot:error:图表尚未渲染完成');
-      return;
-    }
-    try {
-      var rect = el.getBoundingClientRect();
-      var viewBox = svg.viewBox && svg.viewBox.baseVal;
-      var naturalW = (viewBox && viewBox.width) || rect.width;
-      var naturalH = (viewBox && viewBox.height) || rect.height;
-      if (!rect.width || !rect.height) {
-        post('snapshot:error:图表尺寸为 0');
-        return;
-      }
-      var scale = Math.max(1, Math.min(3, naturalW / rect.width));
-      var maxPixels = 16000000;
-      if (rect.width * scale * rect.height * scale > maxPixels) {
-        scale = Math.sqrt(maxPixels / (rect.width * rect.height));
-      }
-      var outW = Math.round(rect.width * scale);
-      var outH = Math.round(rect.height * scale);
-      var clone = svg.cloneNode(true);
-      clone.setAttribute('width', outW);
-      clone.setAttribute('height', outH);
-      clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-      // useMaxWidth 模式下 svg 带内联 max-width,不覆盖会压回原尺寸留白
-      clone.style.maxWidth = 'none';
-      clone.style.width = outW + 'px';
-      clone.style.height = outH + 'px';
-      var xml = new XMLSerializer().serializeToString(clone);
-      var img = new Image();
-      img.onload = function () {
-        try {
-          var canvas = document.createElement('canvas');
-          canvas.width = outW;
-          canvas.height = outH;
-          var ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, outW, outH);
-          post('snapshot:' + canvas.toDataURL('image/png'));
-        } catch (e) {
-          post('snapshot:error:' + e);
-        }
-      };
-      img.onerror = function () {
-        post('snapshot:error:SVG 转图片失败');
-      };
-      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
-    } catch (e) {
-      post('snapshot:error:' + e);
-    }
-  };
+  function initializeMermaid(theme, useMaxWidth) {
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: theme,
+      securityLevel: 'strict',
+      flowchart: { useMaxWidth: useMaxWidth },
+      sequence: { useMaxWidth: useMaxWidth },
+      gantt: { useMaxWidth: useMaxWidth }
+    });
+  }
 
+  // 正文内嵌渲染:宽度自适应容器,上报内容高度供 Flutter 撑开尺寸
   window.renderMermaid = function (encodedCode, theme, background) {
     var code;
     try {
@@ -114,14 +69,7 @@
     var el = document.getElementById('container');
     el.innerHTML = '';
     try {
-      mermaid.initialize({
-        startOnLoad: false,
-        theme: theme,
-        securityLevel: 'strict',
-        flowchart: { useMaxWidth: true },
-        sequence: { useMaxWidth: true },
-        gantt: { useMaxWidth: true }
-      });
+      initializeMermaid(theme, true);
     } catch (e) {}
     mermaid.render('mmd-' + Date.now(), code).then(function (result) {
       if (key !== lastKey) return;
@@ -133,6 +81,164 @@
       setTimeout(reportHeight, 500);
     }).catch(function (err) {
       lastKey = null;
+      var message = err && err.message ? err.message : String(err);
+      post('error:' + message);
+    });
+  };
+
+  // ---------- 全屏矢量查看模式 ----------
+  // 缩放/平移通过修改 SVG viewBox 实现(SVG 坐标系原生缩放)。
+  // 不能用 CSS transform:Chromium 下 transform 缩放含 foreignObject
+  // (mermaid 节点文字)的 SVG 会错乱/消失。
+
+  var zoomSvg = null;
+  var vbInitial = null; // 初始 viewBox(自然尺寸),双击复位用
+  var vb = { x: 0, y: 0, w: 1, h: 1 };
+
+  function applyViewBox() {
+    if (!zoomSvg) return;
+    zoomSvg.setAttribute('viewBox', vb.x + ' ' + vb.y + ' ' + vb.w + ' ' + vb.h);
+  }
+
+  // viewBox 单位与屏幕像素的换算比(preserveAspectRatio=meet 时的有效缩放)
+  function effectiveScale() {
+    return Math.min(window.innerWidth / vb.w, window.innerHeight / vb.h);
+  }
+
+  // 屏幕坐标 → SVG 坐标
+  function toSvgPoint(clientX, clientY) {
+    var s = effectiveScale();
+    var ox = (window.innerWidth - vb.w * s) / 2;
+    var oy = (window.innerHeight - vb.h * s) / 2;
+    return {
+      x: (clientX - ox) / s + vb.x,
+      y: (clientY - oy) / s + vb.y
+    };
+  }
+
+  // 以屏幕点 (cx,cy) 为中心缩放 factor 倍
+  function zoomAround(clientX, clientY, factor) {
+    var anchor = toSvgPoint(clientX, clientY);
+    vb.w = vb.w / factor;
+    vb.h = vb.h / factor;
+    vb.x = anchor.x - (anchor.x - vb.x) / factor;
+    vb.y = anchor.y - (anchor.y - vb.y) / factor;
+    applyViewBox();
+  }
+
+  function panBy(dxPx, dyPx) {
+    var s = effectiveScale();
+    vb.x -= dxPx / s;
+    vb.y -= dyPx / s;
+    applyViewBox();
+  }
+
+  function bindZoomGestures() {
+    var host = document.body;
+    var pointers = new Map();
+    var lastDist = 0;
+    var lastMid = null;
+
+    host.addEventListener('pointerdown', function (e) {
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      try { host.setPointerCapture(e.pointerId); } catch (err) {}
+    });
+    host.addEventListener('pointermove', function (e) {
+      var prev = pointers.get(e.pointerId);
+      if (!prev) return;
+      var cur = { x: e.clientX, y: e.clientY };
+      pointers.set(e.pointerId, cur);
+      if (pointers.size === 1) {
+        panBy(cur.x - prev.x, cur.y - prev.y);
+      } else if (pointers.size === 2) {
+        var pts = Array.from(pointers.values());
+        var dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+        var mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+        if (lastDist > 0 && lastMid) {
+          panBy(mid.x - lastMid.x, mid.y - lastMid.y);
+          zoomAround(mid.x, mid.y, dist / lastDist);
+        }
+        lastDist = dist;
+        lastMid = mid;
+      }
+    });
+    function endPointer(e) {
+      pointers.delete(e.pointerId);
+      if (pointers.size < 2) {
+        lastDist = 0;
+        lastMid = null;
+      }
+    }
+    host.addEventListener('pointerup', endPointer);
+    host.addEventListener('pointercancel', endPointer);
+    host.addEventListener('wheel', function (e) {
+      e.preventDefault();
+      zoomAround(e.clientX, e.clientY, e.deltaY < 0 ? 1.15 : 1 / 1.15);
+    }, { passive: false });
+    host.addEventListener('dblclick', function (e) {
+      if (vb.w < vbInitial.w * 0.98) {
+        vb.x = vbInitial.x; vb.y = vbInitial.y;
+        vb.w = vbInitial.w; vb.h = vbInitial.h;
+        applyViewBox();
+      } else {
+        zoomAround(e.clientX, e.clientY, 2);
+      }
+    });
+    // 窗口尺寸变化:viewBox 不变,有效缩放自动适配,无需处理
+  }
+
+  // 全屏查看:按自然尺寸矢量渲染,viewBox 控制缩放,任意倍数清晰
+  window.renderMermaidZoom = function (encodedCode, theme, background) {
+    var code;
+    try {
+      code = decodeURIComponent(encodedCode);
+    } catch (e) {
+      post('error:' + e);
+      return;
+    }
+    document.body.style.background = background;
+    document.body.style.touchAction = 'none';
+    var el = document.getElementById('container');
+    el.innerHTML = '';
+    try {
+      initializeMermaid(theme, false);
+    } catch (e) {}
+    mermaid.render('mmdz-' + Date.now(), code).then(function (result) {
+      el.innerHTML = result.svg;
+      var svg = el.querySelector('svg');
+      if (!svg) {
+        post('error:未得到 SVG');
+        return;
+      }
+      var viewBox = svg.viewBox && svg.viewBox.baseVal;
+      var naturalW = (viewBox && viewBox.width) || 0;
+      var naturalH = (viewBox && viewBox.height) || 0;
+      if (!naturalW || !naturalH) {
+        var rect = el.getBoundingClientRect();
+        naturalW = rect.width;
+        naturalH = rect.height;
+      }
+      // svg 元素铺满窗口(viewBox 负责内容缩放;高度不能用 %,
+      // 父容器高度自适应会让 100% 失效导致内容贴顶)
+      function sizeToWindow() {
+        svg.style.width = window.innerWidth + 'px';
+        svg.style.height = window.innerHeight + 'px';
+      }
+      sizeToWindow();
+      window.addEventListener('resize', sizeToWindow);
+      // viewBox 驱动缩放:初始 = 全图自然范围,铺满窗口(preserveAspectRatio 居中)
+      vbInitial = {
+        x: (viewBox && viewBox.x) || 0,
+        y: (viewBox && viewBox.y) || 0,
+        w: naturalW,
+        h: naturalH
+      };
+      vb = { x: vbInitial.x, y: vbInitial.y, w: vbInitial.w, h: vbInitial.h };
+      zoomSvg = svg;
+      applyViewBox();
+      bindZoomGestures();
+      post('zoomReady');
+    }).catch(function (err) {
       var message = err && err.message ? err.message : String(err);
       post('error:' + message);
     });

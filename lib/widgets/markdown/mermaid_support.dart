@@ -1,12 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Directory, File, Platform;
-import 'dart:typed_data' show Uint8List;
 
 import 'package:flutter/foundation.dart' show Factory;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/services.dart'
+    show LogicalKeyboardKey, rootBundle;
 import 'package:markdown/markdown.dart' as md;
 import 'package:markdown_widget/markdown_widget.dart';
 import 'package:path_provider/path_provider.dart';
@@ -46,17 +46,11 @@ String? decodeMermaidCode(String encoded) {
   }
 }
 
-/// 解析 JS 侧发来的 PNG dataURL('data:image/png;base64,...')。
-/// 非法格式返回 null。
-Uint8List? decodeMermaidSnapshot(String dataUrl) {
-  final comma = dataUrl.indexOf(',');
-  if (comma < 0 || !dataUrl.startsWith('data:image')) return null;
-  try {
-    return base64Decode(dataUrl.substring(comma + 1));
-  } on FormatException {
-    return null;
-  }
-}
+/// WebView2 环境初始化(整个进程一次);正文图表与全屏查看器共用
+Future<void>? _windowsEnvironmentFuture;
+
+Future<void> ensureWindowsWebViewEnvironment() =>
+    _windowsEnvironmentFuture ??= win.WebviewController.initializeEnvironment();
 
 /// 本地离线渲染:图表在应用内嵌 WebView 中用打包的 mermaid.js 渲染,
 /// 不再依赖 mermaid.ink 等在线服务(503/断网即全军覆没)。
@@ -113,14 +107,8 @@ class _MermaidViewState extends State<MermaidView> {
   bool _pageReady = false;
   String? _lastRenderKey;
 
-  // 点击放大:JS 把 SVG 栅格化为 PNG 后经 channel 回传
-  final ValueNotifier<Uint8List?> _snapshot = ValueNotifier(null);
-  final ValueNotifier<String?> _snapshotError = ValueNotifier(null);
-  bool _snapshotPending = false;
   bool _viewerOpen = false;
   TapGestureRecognizer? _tapRecognizer;
-
-  static Future<void>? _windowsEnvironment;
 
   @override
   void initState() {
@@ -165,9 +153,7 @@ class _MermaidViewState extends State<MermaidView> {
   }
 
   Future<void> _initWindows() async {
-    final environment = _windowsEnvironment ??=
-        win.WebviewController.initializeEnvironment();
-    await environment;
+    await ensureWindowsWebViewEnvironment();
 
     final htmlUrl = await _loadWindowsHtmlFile();
     final controller = win.WebviewController();
@@ -223,9 +209,6 @@ class _MermaidViewState extends State<MermaidView> {
         await _mobileController?.runJavaScript(script);
       }
       _lastRenderKey = key;
-      // 旧快照是上一主题/旧宽度下生成的,随重渲染一并作废
-      _snapshot.value = null;
-      _snapshotError.value = null;
     } catch (_) {
       // 页面随 widget 卸载等瞬时错误:下次主题变化会重试
     }
@@ -240,18 +223,6 @@ class _MermaidViewState extends State<MermaidView> {
     if (!mounted) return;
     if (message == 'pageReady') {
       _onPageReady();
-    } else if (message.startsWith('snapshot:error:')) {
-      _snapshotPending = false;
-      _snapshotError.value = message.substring('snapshot:error:'.length);
-    } else if (message.startsWith('snapshot:')) {
-      _snapshotPending = false;
-      final bytes = decodeMermaidSnapshot(message.substring('snapshot:'.length));
-      if (bytes != null) {
-        _snapshotError.value = null;
-        _snapshot.value = bytes;
-      } else {
-        _snapshotError.value = '大图数据解析失败';
-      }
     } else if (message.startsWith('height:')) {
       final height = double.tryParse(message.substring('height:'.length));
       if (height != null &&
@@ -268,39 +239,17 @@ class _MermaidViewState extends State<MermaidView> {
     }
   }
 
-  /// 点击图表:打开全屏缩放查看器;高清快照未就绪时先请求生成
+  /// 点击图表:打开全屏矢量查看器(独立 WebView 渲染,任意倍数清晰)
   void _openZoomViewer() {
     if (_phase != _MermaidPhase.ready || _viewerOpen || !mounted) return;
     _viewerOpen = true;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     showDialog(
       context: context,
       useSafeArea: false,
       barrierColor: Colors.black87,
-      builder: (_) => _MermaidZoomDialog(
-        snapshot: _snapshot,
-        error: _snapshotError,
-        onRetry: _requestSnapshot,
-      ),
+      builder: (_) => _MermaidZoomDialog(code: widget.code, isDark: isDark),
     ).then((_) => _viewerOpen = false);
-    if (_snapshot.value == null && !_snapshotPending) {
-      _requestSnapshot();
-    }
-  }
-
-  void _requestSnapshot() {
-    if (_phase != _MermaidPhase.ready || _snapshotPending) return;
-    _snapshotPending = true;
-    final script = 'snapshotMermaid();';
-    try {
-      if (Platform.isWindows) {
-        _windowsController?.executeScript(script);
-      } else {
-        _mobileController?.runJavaScript(script);
-      }
-    } catch (_) {
-      _snapshotPending = false;
-      _snapshotError.value = '无法生成大图';
-    }
   }
 
   @override
@@ -316,8 +265,6 @@ class _MermaidViewState extends State<MermaidView> {
     _windowsLoadingSub?.cancel();
     _windowsController?.dispose();
     _tapRecognizer?.dispose();
-    _snapshot.dispose();
-    _snapshotError.dispose();
     super.dispose();
   }
 
@@ -446,86 +393,215 @@ class MermaidNode extends SpanNode {
   }
 }
 
-/// 全屏缩放查看器:展示 JS 栅格化的高清 PNG,双指/滚轮缩放拖动。
-/// 快照未就绪时显示生成进度,失败时提供重试。
-class _MermaidZoomDialog extends StatelessWidget {
-  final ValueNotifier<Uint8List?> snapshot;
-  final ValueNotifier<String?> error;
-  final VoidCallback onRetry;
+/// 全屏矢量查看器:独立 WebView 以 mermaid 自然尺寸渲染同一张图,
+/// 平移/缩放由页面内 JS 实现(双指捏合/滚轮/拖动/双击),矢量渲染
+/// 任意倍数都清晰。全屏后无需保留文档滚动手势,WebView 直接接管输入。
+class _MermaidZoomDialog extends StatefulWidget {
+  final String code;
+  final bool isDark;
 
-  const _MermaidZoomDialog({
-    required this.snapshot,
-    required this.error,
-    required this.onRetry,
-  });
+  const _MermaidZoomDialog({required this.code, required this.isDark});
+
+  @override
+  State<_MermaidZoomDialog> createState() => _MermaidZoomDialogState();
+}
+
+class _MermaidZoomDialogState extends State<_MermaidZoomDialog> {
+  WebViewController? _mobileController;
+  win.WebviewController? _windowsController;
+  StreamSubscription<dynamic>? _windowsMessageSub;
+  StreamSubscription<win.LoadingState>? _windowsLoadingSub;
+  bool _pageReady = false;
+  bool _rendered = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    try {
+      if (Platform.isWindows) {
+        await _initWindows().timeout(const Duration(seconds: 10));
+      } else {
+        await _initMobile().timeout(const Duration(seconds: 10));
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString());
+    }
+  }
+
+  Future<void> _initMobile() async {
+    final controller = WebViewController();
+    await controller.setJavaScriptMode(JavaScriptMode.unrestricted);
+    await controller.setBackgroundColor(Colors.black);
+    await controller.addJavaScriptChannel(
+      _jsChannelName,
+      onMessageReceived: (message) => _onMessage(message.message),
+    );
+    await controller.setNavigationDelegate(
+      NavigationDelegate(onPageFinished: (_) => _onPageReady()),
+    );
+    await controller.loadFlutterAsset(_mermaidHtmlAsset);
+    if (!mounted) return;
+    setState(() => _mobileController = controller);
+    _refreshReady();
+    await _renderZoom();
+  }
+
+  Future<void> _initWindows() async {
+    await ensureWindowsWebViewEnvironment();
+
+    final htmlUrl = await _loadWindowsHtmlFile();
+    final controller = win.WebviewController();
+    await controller.initialize();
+    await controller.setPopupWindowPolicy(win.WebviewPopupWindowPolicy.deny);
+    await controller.setBackgroundColor(Colors.black);
+    _windowsMessageSub = controller.webMessage.listen(
+      (message) => _onMessage(message.toString()),
+    );
+    _windowsLoadingSub = controller.loadingState.listen((state) {
+      if (state == win.LoadingState.navigationCompleted) _onPageReady();
+    });
+    await controller.loadUrl(htmlUrl);
+    if (!mounted) return;
+    setState(() => _windowsController = controller);
+    _refreshReady();
+    await _renderZoom();
+  }
+
+  void _onPageReady() {
+    if (_pageReady) return;
+    _pageReady = true;
+    _refreshReady();
+    _renderZoom();
+  }
+
+  void _refreshReady() {
+    final controllerReady =
+        _mobileController != null || _windowsController != null;
+    if (_pageReady && controllerReady && _error == null) {
+      if (!_rendered) setState(() {});
+    }
+  }
+
+  Future<void> _renderZoom() async {
+    if (!_pageReady || !mounted) return;
+    final backgroundCss =
+        Theme.of(context).brightness == Brightness.dark ? '#101418' : '#000000';
+    final script = "renderMermaidZoom('${Uri.encodeComponent(widget.code)}', "
+        "'${widget.isDark ? 'dark' : 'default'}', '$backgroundCss');";
+    try {
+      if (Platform.isWindows) {
+        await _windowsController?.executeScript(script);
+      } else {
+        await _mobileController?.runJavaScript(script);
+      }
+    } catch (_) {
+      // 页面卸载等瞬时错误,忽略
+    }
+  }
+
+  void _onMessage(String message) {
+    if (!mounted) return;
+    if (message == 'pageReady') {
+      _onPageReady();
+    } else if (message == 'zoomReady') {
+      setState(() => _rendered = true);
+    } else if (message.startsWith('error:')) {
+      final detail = message.substring('error:'.length).trim();
+      if (detail.isNotEmpty) setState(() => _error = detail);
+    }
+  }
+
+  @override
+  void dispose() {
+    _windowsMessageSub?.cancel();
+    _windowsLoadingSub?.cancel();
+    _windowsController?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    Widget? webview;
+    if (_mobileController != null) {
+      // 不传 gestureRecognizers:全屏下没有需要竞争的手势,
+      // 平移/缩放全部交给页面内 JS 处理
+      webview = WebViewWidget(controller: _mobileController!);
+    } else if (_windowsController != null) {
+      webview = win.Webview(_windowsController!);
+    }
+
     return Dialog.fullscreen(
       backgroundColor: Colors.black87,
-      child: Stack(
-        children: [
-          ValueListenableBuilder<Uint8List?>(
-            valueListenable: snapshot,
-            builder: (context, bytes, _) =>
-                ValueListenableBuilder<String?>(
-              valueListenable: error,
-              builder: (context, errorMessage, _) {
-                if (bytes != null) {
-                  return InteractiveViewer(
-                    maxScale: 8,
-                    child: Center(
-                      child: Image.memory(bytes, fit: BoxFit.contain),
-                    ),
-                  );
-                }
-                if (errorMessage != null) {
-                  return _buildError(context, errorMessage);
-                }
-                return const Center(
+      child: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.escape): () =>
+              Navigator.of(context).pop(),
+        },
+        child: Focus(
+          autofocus: true,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (webview != null)
+                // 渲染完成前先不显示,避免空白 WebView 闪白
+                AnimatedOpacity(
+                  opacity: _rendered ? 1 : 0,
+                  duration: const Duration(milliseconds: 120),
+                  child: webview,
+                ),
+              if (!_rendered && _error == null)
+                const Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       CircularProgressIndicator(color: Colors.white70),
                       SizedBox(height: 12),
                       Text(
-                        '正在生成高清大图...',
+                        '正在打开大图...',
                         style: TextStyle(color: Colors.white70, fontSize: 13),
                       ),
                     ],
                   ),
-                );
-              },
-            ),
+                ),
+              if (_error != null)
+                Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.broken_image_outlined,
+                        size: 32,
+                        color: Colors.white70,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '大图打开失败:$_error',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 13,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              Positioned(
+                top: 24,
+                right: 24,
+                child: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white, size: 28),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ),
+            ],
           ),
-          Positioned(
-            top: 24,
-            right: 24,
-            child: IconButton(
-              icon: const Icon(Icons.close, color: Colors.white, size: 28),
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildError(BuildContext context, String message) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.broken_image_outlined, size: 32, color: Colors.white70),
-          const SizedBox(height: 8),
-          Text(
-            '大图生成失败:$message',
-            style: const TextStyle(color: Colors.white70, fontSize: 13),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 12),
-          TextButton(onPressed: onRetry, child: const Text('重试')),
-        ],
+        ),
       ),
     );
   }

@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_test/flutter_test.dart';
@@ -21,29 +20,21 @@ void main() {
     });
   });
 
-  group('decodeMermaidSnapshot', () {
-    test('解析 PNG dataURL', () {
-      final pngBytes = Uint8List.fromList([1, 2, 3, 137, 80, 78, 71]);
-      final dataUrl =
-          'data:image/png;base64,${base64Encode(pngBytes)}';
-      expect(decodeMermaidSnapshot(dataUrl), pngBytes);
-    });
-
-    test('非法格式返回 null', () {
-      expect(decodeMermaidSnapshot('not-a-data-url'), isNull);
-      expect(decodeMermaidSnapshot('data:image/png;base64,!!!!'), isNull);
-      expect(decodeMermaidSnapshot('data:text/plain;base64,AAAA'), isNull);
-    });
-  });
-
   group('mermaid.html 资产', () {
-    test('包含渲染与快照入口、双通道消息桥', () async {
+    test('包含内嵌渲染与全屏矢量查看两个入口', () async {
       final html = await rootBundle.loadString('assets/mermaid/mermaid.html');
+      // 内嵌模式:宽度自适应 + 高度上报
       expect(html, contains('renderMermaid'));
-      expect(html, contains('snapshotMermaid'));
+      expect(html, contains('ResizeObserver'));
+      // 全屏查看模式:自然尺寸矢量渲染 + JS 平移/缩放
+      expect(html, contains('renderMermaidZoom'));
+      expect(html, contains('zoomReady'));
+      expect(html, contains('pointermove'));
+      expect(html, contains('wheel'));
+      // 消息桥兼容双平台
       expect(html, contains('window.chrome.webview.postMessage'));
       expect(html, contains('FlutterMermaidChannel'));
-      expect(html, contains('ResizeObserver'));
+      // 共享同一份 mermaid.min.js
       expect(html, contains('<script src="mermaid.min.js"></script>'));
     });
   });
