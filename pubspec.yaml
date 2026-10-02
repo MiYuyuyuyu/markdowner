@@ -38,6 +38,9 @@ dependencies:
   file_picker: ^8.0.0
   path_provider: ^2.1.0
   shared_preferences: ^2.2.0
+  url_launcher: ^6.3.2
+  # 13.x 的 Android 实现需要 AGP 9/Kotlin 2.3,当前工程(AGP 8.11/Kotlin 2.2)编译不过
+  permission_handler: ^11.3.1
 
 dev_dependencies:
   flutter_test:

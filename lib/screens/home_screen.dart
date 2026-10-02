@@ -1,16 +1,20 @@
-import 'dart:io' show Platform;
+import 'dart:io' show Directory, File, Platform;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:markdown_widget/markdown_widget.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/tab_item.dart';
 import '../providers/search_provider.dart';
 import '../providers/tab_manager.dart';
 import '../providers/settings_provider.dart';
+import '../providers/workspace_provider.dart';
+import '../services/file_service.dart';
 import '../services/storage_service.dart';
 import '../theme/app_breakpoints.dart';
 import '../widgets/tab_bar/browser_tab_bar.dart';
+import '../widgets/markdown/link_support.dart';
 import '../widgets/markdown/markdown_viewer.dart';
 import '../widgets/markdown/markdown_preprocessor.dart';
 import '../widgets/navigation/toc_panel.dart';
@@ -137,6 +141,92 @@ class _HomeScreenState extends State<HomeScreen> {
           tabManager.openFileFromPath(path);
         },
       ),
+    );
+  }
+
+  /// 正文内链接点击:文档间跳转(相对路径)、文档内锚点、外部链接
+  Future<void> _handleMarkdownLink(String href) async {
+    final tabManager = context.read<TabManager>();
+    final currentPath = tabManager.activeTab?.filePath;
+    final link = parseMarkdownLink(href, currentPath);
+    if (link == null) return;
+
+    switch (link.kind) {
+      case MarkdownLinkKind.anchor:
+        _jumpToAnchorInActiveTab(link.target);
+      case MarkdownLinkKind.external:
+        await _launchExternal(href);
+      case MarkdownLinkKind.localFile:
+        await _openLocalLinkTarget(link.target, link.anchor);
+    }
+  }
+
+  Future<void> _launchExternal(String href) async {
+    final uri = Uri.tryParse(href);
+    if (uri == null) {
+      _showSnackBar('无法打开链接:$href');
+      return;
+    }
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      // 系统无对应处理程序等场景;不能让异常逃逸(原默认行为会
+      // 在控制台抛 Unhandled Exception)
+      _showSnackBar('无法打开链接:$href');
+    }
+  }
+
+  Future<void> _openLocalLinkTarget(String path, String? anchor) async {
+    final fileService = context.read<FileService>();
+    final tabManager = context.read<TabManager>();
+
+    if (Directory(path).existsSync()) {
+      // 链接指向文件夹:直接作为工作区打开
+      context.read<WorkspaceProvider>().openFolder(path);
+      return;
+    }
+
+    if (!File(path).existsSync()) {
+      _showSnackBar('链接目标不存在:${FileService.extractFileName(path)}');
+      return;
+    }
+
+    if (!fileService.isSupportedFile(path)) {
+      // 不支持的类型(图片、pdf 等)交给系统对应应用打开
+      await _launchExternal(Uri.file(path).toString());
+      return;
+    }
+
+    await tabManager.openFileFromPath(path);
+    if (anchor == null || !mounted) return;
+
+    // 带 #锚点 的文档链接:打开后定位到对应标题
+    final tab = tabManager.tabs
+        .cast<TabItem?>()
+        .firstWhere((t) => t!.filePath == path, orElse: () => null);
+    if (tab == null) return;
+    final headings = parseHeadings(tab.content);
+    final headingIndex = headingIndexForAnchor(headings, anchor);
+    if (headingIndex >= 0) {
+      _jumpToLineInTab(tab, headings[headingIndex].lineIndex);
+    }
+  }
+
+  void _jumpToAnchorInActiveTab(String anchor) {
+    final tabManager = context.read<TabManager>();
+    final tab = tabManager.activeTab;
+    if (tab == null) return;
+    final headings = parseHeadings(tab.content);
+    final headingIndex = headingIndexForAnchor(headings, anchor);
+    if (headingIndex >= 0) {
+      _jumpToLineInTab(tab, headings[headingIndex].lineIndex);
+    }
+  }
+
+  void _showSnackBar(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
     );
   }
 
@@ -360,6 +450,7 @@ class _HomeScreenState extends State<HomeScreen> {
             onDocumentSearchClosed: () =>
                 setState(() => _documentSearchVisible = false),
             onJumpToLine: _jumpToLineInTab,
+            onLinkTap: _handleMarkdownLink,
           ),
         ),
       ],
@@ -521,6 +612,7 @@ class _ContentArea extends StatefulWidget {
   final bool documentSearchVisible;
   final VoidCallback onDocumentSearchClosed;
   final void Function(TabItem tab, int lineIndex) onJumpToLine;
+  final ValueChanged<String> onLinkTap;
 
   const _ContentArea({
     required this.tocController,
@@ -528,6 +620,7 @@ class _ContentArea extends StatefulWidget {
     required this.documentSearchVisible,
     required this.onDocumentSearchClosed,
     required this.onJumpToLine,
+    required this.onLinkTap,
   });
 
   @override
@@ -565,6 +658,8 @@ class _ContentAreaState extends State<_ContentArea> {
         tabManager.updateScrollOffset(tabManager.activeIndex, offset);
       },
       tocController: widget.tocController,
+      filePath: activeTab.filePath,
+      onLinkTap: widget.onLinkTap,
     );
 
     // 超宽屏下限宽居中,保证舒适阅读行宽

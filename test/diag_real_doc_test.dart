@@ -25,7 +25,12 @@ void main() {
     final storageService = await StorageService.init();
     final settings = SettingsProvider(storageService);
 
-    final doc = File('D:/Home_Work/考研/高数/概率论知识.md').readAsStringSync();
+    final docFile = File('D:/Home_Work/考研/高数/概率论知识.md');
+    if (!docFile.existsSync()) {
+      // 本诊断用例依赖开发者本机的真实笔记文件,机器上没有时跳过
+      return;
+    }
+    final doc = docFile.readAsStringSync();
     debugPrint('DOC LENGTH: ${doc.length}');
 
     await tester.pumpWidget(

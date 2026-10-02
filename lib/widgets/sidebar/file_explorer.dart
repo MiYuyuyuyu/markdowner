@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -8,9 +6,7 @@ import '../../providers/tab_manager.dart';
 import '../../providers/workspace_provider.dart';
 import '../../services/file_service.dart';
 import '../../services/storage_service.dart';
-
-/// Android scoped storage 下无法用 dart:io 列目录,隐藏"打开文件夹"入口
-bool get _supportsFolderBrowsing => !Platform.isAndroid;
+import '../../utils/folder_open_flow.dart';
 
 /// 侧边栏:目录树 + 最近文件夹 + 最近文件 的合并分区视图。
 /// 各分区可折叠;最近条目可移除记录(不影响磁盘文件)。
@@ -101,8 +97,7 @@ class _FileExplorerState extends State<FileExplorer> {
       builder: (context, constraints) {
         final totalHeight = constraints.maxHeight;
         // 两条垂直分隔条各占 6px,从分区高度中扣除,避免溢出
-        final dividerCount = _supportsFolderBrowsing ? 2 : 1;
-        final dividerSpace = 6.0 * dividerCount;
+        final dividerSpace = 12.0;
         // 空间不足时 clamp 上限可能小于下限,double.clamp 会抛 ArgumentError,需防御
         double safeClamp(double value, double min, double max) {
           final effectiveMax = max < min ? min : max;
@@ -112,11 +107,9 @@ class _FileExplorerState extends State<FileExplorer> {
         final treeHeight = safeClamp(totalHeight * _treeWeight, 80.0,
             totalHeight - dividerSpace - 108.0);
         final bottomHeight = totalHeight - treeHeight - dividerSpace;
-        final foldersHeight = _supportsFolderBrowsing
-            ? safeClamp(
-                bottomHeight * _recentFoldersWeight, 60.0, bottomHeight - 66.0)
-            : 0.0;
-        final filesHeight = bottomHeight - foldersHeight - (_supportsFolderBrowsing ? 6.0 : 0.0);
+        final foldersHeight = safeClamp(
+            bottomHeight * _recentFoldersWeight, 60.0, bottomHeight - 66.0);
+        final filesHeight = bottomHeight - foldersHeight - 6.0;
 
         return Column(
           children: [
@@ -134,19 +127,17 @@ class _FileExplorerState extends State<FileExplorer> {
                 );
               }),
             ),
-            if (_supportsFolderBrowsing) ...[
-              SizedBox(height: foldersHeight, child: foldersSection),
-              _VerticalDivider(
-                key: const ValueKey('folders-divider'),
-                onDragDelta: (dy) => setState(() {
-                  _recentFoldersWeight = safeClamp(
-                    _recentFoldersWeight + dy / bottomHeight,
-                    0.15,
-                    0.85,
-                  );
-                }),
-              ),
-            ],
+            SizedBox(height: foldersHeight, child: foldersSection),
+            _VerticalDivider(
+              key: const ValueKey('folders-divider'),
+              onDragDelta: (dy) => setState(() {
+                _recentFoldersWeight = safeClamp(
+                  _recentFoldersWeight + dy / bottomHeight,
+                  0.15,
+                  0.85,
+                );
+              }),
+            ),
             SizedBox(height: filesHeight, child: filesSection),
           ],
         );
@@ -232,22 +223,14 @@ class _OpenActions extends StatelessWidget {
               onTap: () => context.read<TabManager>().openFilePicker(),
             ),
           ),
-          if (_supportsFolderBrowsing) ...[
-            const SizedBox(width: 8),
-            Expanded(
-              child: _ActionButton(
-                icon: Icons.folder_open_outlined,
-                label: '打开文件夹',
-                onTap: () async {
-                  final workspace = context.read<WorkspaceProvider>();
-                  final path = await workspace.openFolderPicker();
-                  if (path != null) {
-                    workspace.openFolder(path);
-                  }
-                },
-              ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _ActionButton(
+              icon: Icons.folder_open_outlined,
+              label: '打开文件夹',
+              onTap: () => pickAndOpenFolder(context),
             ),
-          ],
+          ),
         ],
       ),
     );

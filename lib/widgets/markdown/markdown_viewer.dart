@@ -66,6 +66,8 @@ double _scaledHeadingSize(double bodySize, double defaultHeadingSize) {
 MarkdownConfig _buildMarkdownConfig({
   required bool isDark,
   required TextStyle baseStyle,
+  ValueChanged<String>? onLinkTap,
+  String? filePath,
 }) {
   final baseConfig =
       isDark ? MarkdownConfig.darkConfig : MarkdownConfig.defaultConfig;
@@ -91,7 +93,13 @@ MarkdownConfig _buildMarkdownConfig({
         textStyle: baseStyle,
         wrapper: wrapCodeBlock,
       ),
-      ImgConfig(builder: buildMarkdownImage),
+      ImgConfig(
+        builder: (url, attributes) =>
+            buildMarkdownImage(url, attributes, basePath: filePath),
+      ),
+      // 覆盖默认链接行为:不接管的链接(如相对路径)会被当作系统
+      // URL 打开,ShellExecute 报错且应用内无法跳转
+      if (onLinkTap != null) LinkConfig(onTap: onLinkTap),
       TableConfig(
         // 注意:此处必须使用 FlexColumnWidth。
         // IntrinsicColumnWidth 会对单元格做固有尺寸测量,而公式中
@@ -140,6 +148,12 @@ class MarkdownViewer extends StatefulWidget {
   final ValueChanged<double>? onScrollChanged;
   final TocController? tocController;
 
+  /// 当前文档路径,用于把相对链接/图片解析为本地绝对路径
+  final String? filePath;
+
+  /// 链接点击回调;为 null 时保持 markdown_widget 默认行为(系统打开)
+  final ValueChanged<String>? onLinkTap;
+
   const MarkdownViewer({
     super.key,
     required this.data,
@@ -147,6 +161,8 @@ class MarkdownViewer extends StatefulWidget {
     this.initialScrollOffset = 0,
     this.onScrollChanged,
     this.tocController,
+    this.filePath,
+    this.onLinkTap,
   });
 
   @override
@@ -232,6 +248,8 @@ class _MarkdownViewerState extends State<MarkdownViewer> {
     final config = _buildMarkdownConfig(
       isDark: isDark,
       baseStyle: fontStyle,
+      onLinkTap: widget.onLinkTap,
+      filePath: widget.filePath,
     );
 
     final mermaidData = widget.preprocessed ? widget.data : normalizeMermaidBlocks(widget.data);

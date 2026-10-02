@@ -1,5 +1,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 打开文件夹浏览目录需要读取共享存储:
+         Android 11+ 需要"所有文件访问"(MANAGE_EXTERNAL_STORAGE,系统设置中授予);
+         低版本走传统 READ/WRITE 权限,Android 10 需 requestLegacyExternalStorage -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <application
+        android:requestLegacyExternalStorage="true"
         android:label="markdown_app"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
