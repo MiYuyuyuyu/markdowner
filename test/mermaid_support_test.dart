@@ -20,6 +20,27 @@ void main() {
     });
   });
 
+  group('encodeMermaidJsParam', () {
+    test('单引号被补编码,可直接内插进 JS 单引号字符串', () {
+      const code = '''
+flowchart TD
+    A["It's ok"] --> B{C}''';
+      final param = encodeMermaidJsParam(code);
+      // 生成的是合法 JS 字面量:参数内不能出现裸单引号,
+      // 即下一个引号序列必须恰好在参数串结束处(', ' 分隔符)
+      final script = "renderMermaid('$param', 'default', '#ffffff');";
+      final inner = script.substring("renderMermaid('".length);
+      expect(inner.indexOf("', '"), param.length);
+    });
+
+    test('decodeURIComponent 可还原原文(含单引号与反斜杠)', () {
+      const code = r'''A-->|'x\ny'|B''';
+      final param = encodeMermaidJsParam(code);
+      final restored = Uri.decodeComponent(param);
+      expect(restored, code);
+    });
+  });
+
   group('mermaid.html 资产', () {
     test('包含内嵌渲染与全屏矢量查看两个入口', () async {
       final html = await rootBundle.loadString('assets/mermaid/mermaid.html');

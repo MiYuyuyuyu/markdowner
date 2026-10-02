@@ -174,9 +174,7 @@ class _MarkdownViewerState extends State<MarkdownViewer> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _restoreInitialOffset();
-    });
+    _scheduleRestore();
   }
 
   @override
@@ -184,25 +182,46 @@ class _MarkdownViewerState extends State<MarkdownViewer> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.data != widget.data) {
       _initialOffsetRestored = false;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _restoreInitialOffset();
-      });
+      _scheduleRestore();
     }
   }
 
-  void _restoreInitialOffset() {
+  void _scheduleRestore() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _restoreInitialOffset();
+    });
+  }
+
+  /// 恢复阅读位置。正文列表是懒加载的,首帧的 maxScrollExtent 只是
+  /// 已构建内容的估计值,直接 clamp 会把目标偏移钳到一屏附近且不再
+  /// 校正(长文档恢复位置严重欠恢复);因此目标尚未可达时按帧重试,
+  /// 直到 maxScrollExtent 增长到位或重试耗尽(内容比记录的偏移短)。
+  void _restoreInitialOffset({int tries = 12}) {
     if (!mounted || _initialOffsetRestored || widget.initialScrollOffset <= 0) {
       return;
     }
     final position = _findScrollablePosition(_scrollHostKey.currentContext);
-    if (position == null || !position.hasPixels || position.maxScrollExtent <= 0) {
+    if (position == null || !position.hasPixels) {
+      _retryRestore(tries);
       return;
     }
-    _initialOffsetRestored = true;
-    position.jumpTo(widget.initialScrollOffset.clamp(
+    final target = widget.initialScrollOffset;
+    position.jumpTo(target.clamp(
       position.minScrollExtent,
       position.maxScrollExtent,
     ));
+    if (position.maxScrollExtent >= target || tries <= 0) {
+      _initialOffsetRestored = true;
+      return;
+    }
+    _retryRestore(tries);
+  }
+
+  void _retryRestore(int tries) {
+    if (tries <= 0) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _restoreInitialOffset(tries: tries - 1);
+    });
   }
 
   ScrollPosition? _findScrollablePosition(BuildContext? context) {
