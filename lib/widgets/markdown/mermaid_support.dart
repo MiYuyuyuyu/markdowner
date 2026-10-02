@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Directory, File, Platform;
+import 'dart:typed_data' show Uint8List;
 
 import 'package:flutter/foundation.dart' show Factory;
 import 'package:flutter/gestures.dart';
@@ -40,6 +41,18 @@ String? decodeMermaidCode(String encoded) {
   try {
     final decoded = utf8.decode(base64Url.decode(encoded));
     return decoded.trim().isEmpty ? null : decoded;
+  } on FormatException {
+    return null;
+  }
+}
+
+/// 解析 JS 侧发来的 PNG dataURL('data:image/png;base64,...')。
+/// 非法格式返回 null。
+Uint8List? decodeMermaidSnapshot(String dataUrl) {
+  final comma = dataUrl.indexOf(',');
+  if (comma < 0 || !dataUrl.startsWith('data:image')) return null;
+  try {
+    return base64Decode(dataUrl.substring(comma + 1));
   } on FormatException {
     return null;
   }
@@ -99,6 +112,13 @@ class _MermaidViewState extends State<MermaidView> {
   StreamSubscription<win.LoadingState>? _windowsLoadingSub;
   bool _pageReady = false;
   String? _lastRenderKey;
+
+  // 点击放大:JS 把 SVG 栅格化为 PNG 后经 channel 回传
+  final ValueNotifier<Uint8List?> _snapshot = ValueNotifier(null);
+  final ValueNotifier<String?> _snapshotError = ValueNotifier(null);
+  bool _snapshotPending = false;
+  bool _viewerOpen = false;
+  TapGestureRecognizer? _tapRecognizer;
 
   static Future<void>? _windowsEnvironment;
 
@@ -203,6 +223,9 @@ class _MermaidViewState extends State<MermaidView> {
         await _mobileController?.runJavaScript(script);
       }
       _lastRenderKey = key;
+      // 旧快照是上一主题/旧宽度下生成的,随重渲染一并作废
+      _snapshot.value = null;
+      _snapshotError.value = null;
     } catch (_) {
       // 页面随 widget 卸载等瞬时错误:下次主题变化会重试
     }
@@ -217,6 +240,18 @@ class _MermaidViewState extends State<MermaidView> {
     if (!mounted) return;
     if (message == 'pageReady') {
       _onPageReady();
+    } else if (message.startsWith('snapshot:error:')) {
+      _snapshotPending = false;
+      _snapshotError.value = message.substring('snapshot:error:'.length);
+    } else if (message.startsWith('snapshot:')) {
+      _snapshotPending = false;
+      final bytes = decodeMermaidSnapshot(message.substring('snapshot:'.length));
+      if (bytes != null) {
+        _snapshotError.value = null;
+        _snapshot.value = bytes;
+      } else {
+        _snapshotError.value = '大图数据解析失败';
+      }
     } else if (message.startsWith('height:')) {
       final height = double.tryParse(message.substring('height:'.length));
       if (height != null &&
@@ -233,6 +268,41 @@ class _MermaidViewState extends State<MermaidView> {
     }
   }
 
+  /// 点击图表:打开全屏缩放查看器;高清快照未就绪时先请求生成
+  void _openZoomViewer() {
+    if (_phase != _MermaidPhase.ready || _viewerOpen || !mounted) return;
+    _viewerOpen = true;
+    showDialog(
+      context: context,
+      useSafeArea: false,
+      barrierColor: Colors.black87,
+      builder: (_) => _MermaidZoomDialog(
+        snapshot: _snapshot,
+        error: _snapshotError,
+        onRetry: _requestSnapshot,
+      ),
+    ).then((_) => _viewerOpen = false);
+    if (_snapshot.value == null && !_snapshotPending) {
+      _requestSnapshot();
+    }
+  }
+
+  void _requestSnapshot() {
+    if (_phase != _MermaidPhase.ready || _snapshotPending) return;
+    _snapshotPending = true;
+    final script = 'snapshotMermaid();';
+    try {
+      if (Platform.isWindows) {
+        _windowsController?.executeScript(script);
+      } else {
+        _mobileController?.runJavaScript(script);
+      }
+    } catch (_) {
+      _snapshotPending = false;
+      _snapshotError.value = '无法生成大图';
+    }
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -245,6 +315,9 @@ class _MermaidViewState extends State<MermaidView> {
     _windowsMessageSub?.cancel();
     _windowsLoadingSub?.cancel();
     _windowsController?.dispose();
+    _tapRecognizer?.dispose();
+    _snapshot.dispose();
+    _snapshotError.dispose();
     super.dispose();
   }
 
@@ -286,16 +359,27 @@ class _MermaidViewState extends State<MermaidView> {
           child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
         );
       case _MermaidPhase.ready:
-        final webview = Platform.isWindows
-            // 图表为静态展示:屏蔽指针,鼠标滚轮/拖动全部交给文档滚动
-            ? IgnorePointer(child: win.Webview(_windowsController!))
-            // Eager:手势全部让给外层滚动列表,WebView 不吞滑动
-            : WebViewWidget(
-                controller: _mobileController!,
-                gestureRecognizers: {
-                  Factory<EagerGestureRecognizer>(EagerGestureRecognizer.new),
-                },
-              );
+        // 点击图表打开全屏缩放查看;拖动/滚轮仍交给文档滚动
+        Widget webview;
+        if (Platform.isWindows) {
+          webview = GestureDetector(
+            onTap: _openZoomViewer,
+            // IgnorePointer 挡住 WebView2 吞事件,opaque 保证 GestureDetector
+            // 自身可命中:点按 → 查看器,拖动 → 外层滚动
+            behavior: HitTestBehavior.opaque,
+            child: IgnorePointer(child: win.Webview(_windowsController!)),
+          );
+        } else {
+          _tapRecognizer ??= TapGestureRecognizer()..onTap = _openZoomViewer;
+          webview = WebViewWidget(
+            controller: _mobileController!,
+            // 只声明点按:WebView 认领单击(打开查看器),
+            // 拖动未被认领,自然落到外层滚动列表
+            gestureRecognizers: {
+              Factory<OneSequenceGestureRecognizer>(() => _tapRecognizer!),
+            },
+          );
+        }
         return SizedBox(
           height: _height ?? 200,
           width: double.infinity,
@@ -359,5 +443,90 @@ class MermaidNode extends SpanNode {
     }
 
     return WidgetSpan(child: MermaidView(code: code));
+  }
+}
+
+/// 全屏缩放查看器:展示 JS 栅格化的高清 PNG,双指/滚轮缩放拖动。
+/// 快照未就绪时显示生成进度,失败时提供重试。
+class _MermaidZoomDialog extends StatelessWidget {
+  final ValueNotifier<Uint8List?> snapshot;
+  final ValueNotifier<String?> error;
+  final VoidCallback onRetry;
+
+  const _MermaidZoomDialog({
+    required this.snapshot,
+    required this.error,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog.fullscreen(
+      backgroundColor: Colors.black87,
+      child: Stack(
+        children: [
+          ValueListenableBuilder<Uint8List?>(
+            valueListenable: snapshot,
+            builder: (context, bytes, _) =>
+                ValueListenableBuilder<String?>(
+              valueListenable: error,
+              builder: (context, errorMessage, _) {
+                if (bytes != null) {
+                  return InteractiveViewer(
+                    maxScale: 8,
+                    child: Center(
+                      child: Image.memory(bytes, fit: BoxFit.contain),
+                    ),
+                  );
+                }
+                if (errorMessage != null) {
+                  return _buildError(context, errorMessage);
+                }
+                return const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(color: Colors.white70),
+                      SizedBox(height: 12),
+                      Text(
+                        '正在生成高清大图...',
+                        style: TextStyle(color: Colors.white70, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+          Positioned(
+            top: 24,
+            right: 24,
+            child: IconButton(
+              icon: const Icon(Icons.close, color: Colors.white, size: 28),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildError(BuildContext context, String message) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.broken_image_outlined, size: 32, color: Colors.white70),
+          const SizedBox(height: 8),
+          Text(
+            '大图生成失败:$message',
+            style: const TextStyle(color: Colors.white70, fontSize: 13),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 12),
+          TextButton(onPressed: onRetry, child: const Text('重试')),
+        ],
+      ),
+    );
   }
 }

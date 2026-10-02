@@ -42,6 +42,63 @@
     observer.observe(el);
   }
 
+  // 把当前 SVG 高清栅格化为 PNG:点击图表放大查看时由 Flutter 调用。
+  // 优先用 viewBox 固有尺寸(mermaid 布局的自然宽度),限制倍数与总像素,
+  // 避免 PNG 传输与图片解码内存失控。
+  window.snapshotMermaid = function () {
+    var el = document.getElementById('container');
+    var svg = el && el.querySelector('svg');
+    if (!svg) {
+      post('snapshot:error:图表尚未渲染完成');
+      return;
+    }
+    try {
+      var rect = el.getBoundingClientRect();
+      var viewBox = svg.viewBox && svg.viewBox.baseVal;
+      var naturalW = (viewBox && viewBox.width) || rect.width;
+      var naturalH = (viewBox && viewBox.height) || rect.height;
+      if (!rect.width || !rect.height) {
+        post('snapshot:error:图表尺寸为 0');
+        return;
+      }
+      var scale = Math.max(1, Math.min(3, naturalW / rect.width));
+      var maxPixels = 16000000;
+      if (rect.width * scale * rect.height * scale > maxPixels) {
+        scale = Math.sqrt(maxPixels / (rect.width * rect.height));
+      }
+      var outW = Math.round(rect.width * scale);
+      var outH = Math.round(rect.height * scale);
+      var clone = svg.cloneNode(true);
+      clone.setAttribute('width', outW);
+      clone.setAttribute('height', outH);
+      clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+      // useMaxWidth 模式下 svg 带内联 max-width,不覆盖会压回原尺寸留白
+      clone.style.maxWidth = 'none';
+      clone.style.width = outW + 'px';
+      clone.style.height = outH + 'px';
+      var xml = new XMLSerializer().serializeToString(clone);
+      var img = new Image();
+      img.onload = function () {
+        try {
+          var canvas = document.createElement('canvas');
+          canvas.width = outW;
+          canvas.height = outH;
+          var ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, outW, outH);
+          post('snapshot:' + canvas.toDataURL('image/png'));
+        } catch (e) {
+          post('snapshot:error:' + e);
+        }
+      };
+      img.onerror = function () {
+        post('snapshot:error:SVG 转图片失败');
+      };
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
+    } catch (e) {
+      post('snapshot:error:' + e);
+    }
+  };
+
   window.renderMermaid = function (encodedCode, theme, background) {
     var code;
     try {
