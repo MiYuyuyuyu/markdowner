@@ -914,4 +914,86 @@ graph TD
     expect(reportedOffset, isNotNull);
     expect(reportedOffset!, greaterThan(0));
   });
+
+  testWidgets('MarkdownViewer keeps code block font size with reader setting', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({'font_size': 22.0});
+    final storageService = await StorageService.init();
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(
+            create: (_) => SettingsProvider(storageService),
+          ),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(body: MarkdownViewer(data: '```dart\nint sum = 0;\n```')),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final richTextFinder = find.byWidgetPredicate(
+      (widget) => widget is RichText && widget.text.toPlainText().contains('sum'),
+    );
+    final codeRichText = tester.widget<RichText>(richTextFinder.first);
+
+    // 收集代码块内全部叶子文本 span:无论是否被高亮规则命中,
+    // 字号都必须跟随阅读字号(markdown_widget 对未命中 token 走
+    // styleNotMatched,不传则继承环境默认 14 号,导致同行大小不一)
+    final leafFontSizes = <double?>[];
+    void collectLeaves(List<InlineSpan>? spans) {
+      if (spans == null) return;
+      for (final span in spans) {
+        if (span is TextSpan) {
+          if (span.children == null || span.children!.isEmpty) {
+            if ((span.text ?? '').isNotEmpty) leafFontSizes.add(span.style?.fontSize);
+          } else {
+            collectLeaves(span.children);
+          }
+        }
+      }
+    }
+
+    final root = codeRichText.text;
+    collectLeaves(root is TextSpan ? [root] : null);
+    expect(leafFontSizes, isNotEmpty);
+    for (final fontSize in leafFontSizes) {
+      expect(fontSize, 22.0);
+    }
+  });
+
+  testWidgets('MarkdownViewer wraps long inline math inside table cells', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final storageService = await StorageService.init();
+
+    const markdown = r'''
+| 规则 | 公式 |
+|------|------|
+| 加法 | $T_1(n) + T_2(n) + T_3(n) = O(\max(f(n), g(n), h(n)))$ |
+''';
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(
+            create: (_) => SettingsProvider(storageService),
+          ),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(body: MarkdownViewer(data: markdown)),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    // 单元格内的行内公式按 TeX 断行点拆为 Wrap 折行显示(列宽固定,
+    // 旧实现仅横向滚动,大字号下内容被裁切不可见)
+    expect(find.byType(Wrap), findsAtLeastNWidgets(1));
+  });
 }

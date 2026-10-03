@@ -79,6 +79,11 @@ MarkdownConfig _buildMarkdownConfig({
     );
   }
 
+  // 代码块统一 monospace 并跟随阅读字号:markdown_widget 对未被高亮
+  // 规则命中的 token(标识符、数字等)取 styleNotMatched,不传则样式
+  // 为 null 继承环境默认字号,导致同一行内关键字大、普通文本小
+  final codeStyle = baseStyle.copyWith(fontFamily: 'monospace');
+
   return baseConfig.copy(
     configs: [
       PConfig(textStyle: baseStyle),
@@ -89,7 +94,8 @@ MarkdownConfig _buildMarkdownConfig({
       H5Config(style: headingStyle(16)),
       H6Config(style: headingStyle(16)),
       PreConfig(
-        textStyle: baseStyle,
+        textStyle: codeStyle,
+        styleNotMatched: codeStyle,
         wrapper: wrapCodeBlock,
       ),
       ImgConfig(
