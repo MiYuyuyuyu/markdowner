@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/settings_provider.dart';
 import 'alert_support.dart';
+import 'br_support.dart';
 import 'code_block_support.dart';
 import 'image_support.dart';
 import 'latex_support.dart';
@@ -288,6 +289,7 @@ class _MarkdownViewerState extends State<MarkdownViewer> {
               LatexSyntax(),
               MermaidSyntax(),
               md.EmojiSyntax(),
+              BrSyntax(),
             ],
             blockSyntaxList: [const md.AlertBlockSyntax()],
             richTextBuilder: _buildMarkdownBlock,
