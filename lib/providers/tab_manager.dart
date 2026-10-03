@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -12,8 +13,13 @@ class TabManager extends ChangeNotifier {
   final List<TabItem> _tabs = [];
   int _activeIndex = -1;
   static int _idCounter = 0;
+  Timer? _scrollSaveDebounce;
 
   TabManager(this._fileService, this._storageService);
+
+  /// 打开文件失败(文件仍存在,如编码不支持)时的用户提示回调,
+  /// 由 UI 层(HomeScreen)注入
+  void Function(String message)? onError;
 
   List<TabItem> get tabs => List.unmodifiable(_tabs);
   int get activeIndex => _activeIndex;
@@ -89,9 +95,12 @@ class TabManager extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       debugPrint('Failed to open file: $e');
-      // 文件仍存在时(编码不支持、被占用等)不应移出最近列表
+      // 文件仍存在时(编码不支持、被占用等)不应移出最近列表,
+      // 并给出用户可见反馈,避免点击后静默无反应
       if (!_fileExists(path)) {
         await _storageService.removeRecentFile(path);
+      } else {
+        onError?.call('无法打开文件:${FileService.extractFileName(path)}');
       }
     }
   }
@@ -160,11 +169,23 @@ class TabManager extends ChangeNotifier {
     notifyListeners();
   }
 
-  void updateScrollOffset(int index, double offset) {
-    if (index >= 0 && index < _tabs.length) {
-      _tabs[index].scrollOffset = offset;
+  /// 记录滚动位置。[tab] 按对象定位(而非 activeIndex),避免标签
+  /// 切换同帧内到达的滚动通知把偏移写进新标签。
+  /// 滚动高频触发:延迟合并落盘,避免每个滚动帧都做 JSON 序列化
+  /// 与平台通道写入。
+  void updateScrollOffset(TabItem tab, double offset) {
+    if (!_tabs.contains(tab)) return;
+    tab.scrollOffset = offset;
+    _scrollSaveDebounce ??= Timer(const Duration(milliseconds: 300), () {
+      _scrollSaveDebounce = null;
       _saveSession();
-    }
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollSaveDebounce?.cancel();
+    super.dispose();
   }
 
   Future<void> removeRecentFile(String path) async {
@@ -173,6 +194,7 @@ class TabManager extends ChangeNotifier {
   }
 
   Future<void> _saveSession({bool? showSidebar, bool? showToc}) {
+    final stored = _storageService.getReadingSession();
     return _storageService.saveReadingSession(
       ReadingSession(
         openTabs: _tabs
@@ -183,8 +205,8 @@ class TabManager extends ChangeNotifier {
                 ))
             .toList(),
         activePath: activeTab?.filePath,
-        showSidebar: showSidebar ?? _storageService.getReadingSession().showSidebar,
-        showToc: showToc ?? _storageService.getReadingSession().showToc,
+        showSidebar: showSidebar ?? stored.showSidebar,
+        showToc: showToc ?? stored.showToc,
       ),
     );
   }

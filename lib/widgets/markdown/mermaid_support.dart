@@ -46,6 +46,13 @@ String? decodeMermaidCode(String encoded) {
   }
 }
 
+/// 把图表代码编码为可安全内插进 JS 单引号字符串字面量的参数。
+/// Uri.encodeComponent 不会转义单引号(属于保留字符),直接内插会
+/// 产生非法 JS,图表将永远渲染失败;HTML 侧用 decodeURIComponent
+/// 还原参数,因此这里把 ' 补编码为 %27 即可。
+String encodeMermaidJsParam(String code) =>
+    Uri.encodeComponent(code).replaceAll("'", '%27');
+
 /// WebView2 环境初始化(整个进程一次);正文图表与全屏查看器共用
 Future<void>? _windowsEnvironmentFuture;
 
@@ -167,7 +174,12 @@ class _MermaidViewState extends State<MermaidView> {
       if (state == win.LoadingState.navigationCompleted) _onPageReady();
     });
     await controller.loadUrl(htmlUrl);
-    if (!mounted) return;
+    if (!mounted) {
+      // init 期间 State 已卸载(快速滚动略过多个图表等):控制器尚未
+      // 登记到字段,在此释放,避免泄漏原生 WebView2 实例
+      await controller.dispose();
+      return;
+    }
     setState(() => _windowsController = controller);
     // navigationCompleted/pageReady 可能先于本赋值到达:补一次 phase 刷新
     _refreshPhase();
@@ -200,13 +212,18 @@ class _MermaidViewState extends State<MermaidView> {
     if (_lastRenderKey == key) return;
 
     final backgroundCss = _cssColor(theme.colorScheme.surface);
-    final script = "renderMermaid('${Uri.encodeComponent(widget.code)}', "
+    final script = "renderMermaid('${encodeMermaidJsParam(widget.code)}', "
         "'${isDark ? 'dark' : 'default'}', '$backgroundCss');";
     try {
       if (Platform.isWindows) {
-        await _windowsController?.executeScript(script);
+        final controller = _windowsController;
+        // 未就绪时直接返回:不能把去重键记下来,否则脚本永远不会重发
+        if (controller == null) return;
+        await controller.executeScript(script);
       } else {
-        await _mobileController?.runJavaScript(script);
+        final controller = _mobileController;
+        if (controller == null) return;
+        await controller.runJavaScript(script);
       }
       _lastRenderKey = key;
     } catch (_) {
@@ -467,7 +484,11 @@ class _MermaidZoomDialogState extends State<_MermaidZoomDialog> {
       if (state == win.LoadingState.navigationCompleted) _onPageReady();
     });
     await controller.loadUrl(htmlUrl);
-    if (!mounted) return;
+    if (!mounted) {
+      // 同 _MermaidViewState:卸载后释放未登记的控制器
+      await controller.dispose();
+      return;
+    }
     setState(() => _windowsController = controller);
     _refreshReady();
     await _renderZoom();
@@ -492,7 +513,7 @@ class _MermaidZoomDialogState extends State<_MermaidZoomDialog> {
     if (!_pageReady || !mounted) return;
     final backgroundCss =
         Theme.of(context).brightness == Brightness.dark ? '#101418' : '#000000';
-    final script = "renderMermaidZoom('${Uri.encodeComponent(widget.code)}', "
+    final script = "renderMermaidZoom('${encodeMermaidJsParam(widget.code)}', "
         "'${widget.isDark ? 'dark' : 'default'}', '$backgroundCss');";
     try {
       if (Platform.isWindows) {

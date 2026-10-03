@@ -88,22 +88,17 @@ class LatexNode extends SpanNode {
       return TextSpan(style: style, text: displayText);
     }
 
-    final latex = isInline
-        ? Math.tex(
-            content,
-            mathStyle: MathStyle.text,
-            textStyle: style,
-            textScaleFactor: _inlineMathScaleFactor,
-            onErrorFallback: (error) => _buildErrorFallback(displayText, style),
-          )
-        : _buildBlockMath(
-            content,
-            displayText,
-            style,
-            insideTable: _isInsideTableCell(),
-          );
-
     if (isInline) {
+      final latex = Math.tex(
+        content,
+        mathStyle: MathStyle.text,
+        textStyle: style,
+        textScaleFactor: _inlineMathScaleFactor,
+        onErrorFallback: (error) => _buildErrorFallback(displayText, style),
+      );
+      if (_isInsideTableCell()) {
+        return _buildInlineMathInCell(latex);
+      }
       return WidgetSpan(
         alignment: PlaceholderAlignment.middle,
         child: SingleChildScrollView(
@@ -113,7 +108,48 @@ class LatexNode extends SpanNode {
       );
     }
 
-    return WidgetSpan(child: latex);
+    return WidgetSpan(
+      child: _buildBlockMath(
+        content,
+        displayText,
+        style,
+        insideTable: _isInsideTableCell(),
+      ),
+    );
+  }
+
+  /// 单元格内的行内公式:表格列宽为 FlexColumnWidth 固定均分
+  /// (IntrinsicColumnWidth 会因公式内 LayoutBuilder 崩溃,不能改),
+  /// WidgetSpan 不可折行,公式宽过列宽时只能横向滚动/裁切——大字号
+  /// 下内容不可见。按 TeX 断行点拆为 Wrap 折行;拆不开(单部件)时
+  /// 回落为横向滚动。
+  WidgetSpan _buildInlineMathInCell(Math latex) {
+    try {
+      final breaks = latex.texBreak();
+      if (breaks.parts.length > 1) {
+        return WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          child: Wrap(
+            spacing: 2,
+            runSpacing: 2,
+            // 单个部件宽过列宽时等比缩小(FittedBox),避免溢出裁切;
+            // 放得下的部件按原尺寸渲染
+            children: breaks.parts
+                .map((part) => FittedBox(fit: BoxFit.scaleDown, child: part))
+                .toList(growable: false),
+          ),
+        );
+      }
+    } catch (_) {
+      // 拆行异常时回落为横向滚动
+    }
+    return WidgetSpan(
+      alignment: PlaceholderAlignment.middle,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: latex,
+      ),
+    );
   }
 
   /// 是否处于表格单元格内。

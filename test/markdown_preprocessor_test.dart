@@ -95,5 +95,27 @@ void main() {
       final result = normalizeMarkdownForParsing(data);
       expect(result, isNot(contains(latexPipeToken)));
     });
+
+    test(r'lone dollar in table row keeps all pipes intact', () {
+      // 货币符号与表格同行:不能因翻转公式态而吞掉列分隔符
+      const data = '| 单价 | \$100 | 备注 |\n|---|---|---|\n| x | \$5 | y |';
+      final result = normalizeMarkdownForParsing(data);
+      expect(result, isNot(contains(latexPipeToken)));
+      expect(result, '| 单价 | \$100 | 备注 |\n|---|---|---|\n| x | \$5 | y |');
+    });
+
+    test(r'two lone dollars in table row do not pair across cells', () {
+      // 配对区间外还有 |(表格行):公式无法跨单元格,不应保护管道
+      const data = '| \$100 | \$50 |';
+      final result = normalizeMarkdownForParsing(data);
+      expect(result, isNot(contains(latexPipeToken)));
+      expect(result, data);
+    });
+
+    test(r'inline math with pipe still protected when line is not a table', () {
+      const data = r'公式 $a|b$ 单独成段';
+      final result = normalizeMarkdownForParsing(data);
+      expect(result, contains(latexPipeToken));
+    });
   });
 }

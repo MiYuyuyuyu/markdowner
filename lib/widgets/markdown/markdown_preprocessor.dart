@@ -49,6 +49,20 @@ int _runLength(String line, int start, String char) {
   return end - start;
 }
 
+/// [openIndex] 处的单个 $ 能否开启行内公式:行内需存在配对 $,且配对
+/// 内容须"公式样"(含数字/空白之外的字符,如字母、反斜杠、括号)。
+/// 仅由数字/空白/小数点/千分位/百分号/管道组成的串(如 "100 | ")更
+/// 可能是价格文本——尤其要防止 "| $100 | $50 |" 把表格分隔管道当成
+/// 公式内容替换掉,破坏表格结构并泄漏占位符。
+bool _opensInlineMath(String line, int openIndex) {
+  final closeIndex = line.indexOf(r'$', openIndex + 1);
+  if (closeIndex < 0) return false;
+  final content = line.substring(openIndex + 1, closeIndex);
+  return content.isNotEmpty && !_priceLikePattern.hasMatch(content);
+}
+
+final _priceLikePattern = RegExp(r'^[\s\d.,|%]+$');
+
 int? _findClosingRun(String line, int from, String char, int length) {
   var index = from;
   while (index <= line.length - length) {
@@ -173,7 +187,11 @@ int? _findClosingRun(String line, int from, String char, int length) {
         index += 2;
         continue;
       }
-      if (!inBlockMath) {
+      // 单个 $ 仅在行内存在配对 $ 时才开启公式态(与 LatexSyntax 的
+      // 行内正则一致),否则货币符号等孤立 $ 会让其后的表格管道被
+      // 误替换("| 单价 | $100 |" 会因此少一列并泄漏占位符)。
+      if (!inBlockMath &&
+          (inInlineMath || _opensInlineMath(line, index))) {
         inInlineMath = !inInlineMath;
       }
       buffer.write(current);

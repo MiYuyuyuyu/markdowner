@@ -10,10 +10,12 @@
 ; 注意:版本号需与 pubspec.yaml 的 version 保持同步。
 
 #define MyAppName "Markdown Reader"
-#define MyAppVersion "0.1.6"
+#define MyAppVersion "0.1.11"
 #define MyAppPublisher "MarkdownReader"
 #define MyAppExeName "markdown_app.exe"
-#define ReleaseDir "..\build\windows\x64\runner\Release"
+; Release 目录相对本脚本(项目根)解析;Flutter 构建产物在
+; <项目>\build\windows\x64\runner\Release,不能带 ..\ 前缀
+#define ReleaseDir "build\windows\x64\runner\Release"
 
 [Setup]
 ; GUID 仅用于区分本应用,重新生成会影响升级安装的识别,保持不变即可

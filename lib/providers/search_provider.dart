@@ -24,30 +24,33 @@ class SearchMatch {
   }
 }
 
-/// 在 [text] 中大小写不敏感地查找 [query] 的所有命中(空 query 返回空列表)
+/// 在 [text] 中大小写不敏感地查找 [query] 的所有命中(空 query 返回空列表)。
+/// 逐行搜索:若在全文的小写副本上定位,个别字符(如 'İ')转小写后
+/// 长度变化会使坐标与原文错位甚至越界。
 List<SearchMatch> searchInText(String text, String query) {
   final matches = <SearchMatch>[];
   if (query.isEmpty) return matches;
 
-  final lowerText = text.toLowerCase();
   final lowerQuery = query.toLowerCase();
   var lineStart = 0;
   var lineIndex = 0;
 
   while (lineStart <= text.length) {
-    final lineEnd = lowerText.indexOf('\n', lineStart);
-    final lineEndIndex = lineEnd == -1 ? lowerText.length : lineEnd;
-    var from = lineStart;
+    final lineEnd = text.indexOf('\n', lineStart);
+    final lineEndIndex = lineEnd == -1 ? text.length : lineEnd;
+    final lineText = text.substring(lineStart, lineEndIndex);
+    final lowerLine = lineText.toLowerCase();
+    var from = 0;
     while (true) {
-      final idx = lowerText.indexOf(lowerQuery, from);
-      if (idx < 0 || idx >= lineEndIndex) break;
+      final idx = lowerLine.indexOf(lowerQuery, from);
+      if (idx < 0) break;
       matches.add(SearchMatch(
         lineIndex: lineIndex,
-        lineText: text.substring(lineStart, lineEndIndex),
-        start: idx - lineStart,
-        end: idx - lineStart + query.length,
+        lineText: lineText,
+        start: idx,
+        end: idx + lowerQuery.length,
       ));
-      from = idx + query.length;
+      from = idx + lowerQuery.length;
     }
     if (lineEnd == -1) break;
     lineStart = lineEnd + 1;

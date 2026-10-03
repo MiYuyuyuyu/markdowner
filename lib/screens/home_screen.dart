@@ -1,4 +1,4 @@
-import 'dart:io' show Directory, File, Platform;
+import 'dart:io' show Directory, File;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -37,19 +37,33 @@ class _HomeScreenState extends State<HomeScreen> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   WindowTier? _previousTier;
   bool _documentSearchVisible = false;
+  TabManager? _tabManager;
 
   // 面板宽度用本地 ValueNotifier 驱动:拖动过程中只重建面板子树,
   // 不触发 SettingsProvider 通知(MarkdownWidget 的 didUpdateWidget
-  // 会无条件重新解析整篇文档,每帧重解析会严重卡顿)
-  late final ValueNotifier<double> _tocWidth = ValueNotifier<double>(
-    _clampTocWidth(context.read<StorageService>().getTocPanelWidth()),
-  );
-  late final ValueNotifier<double> _explorerWidth = ValueNotifier<double>(
-    _clampExplorerWidth(context.read<StorageService>().getFileExplorerWidth()),
-  );
+  // 会无条件重新解析整篇文档,每帧重解析会严重卡顿)。
+  // 在 initState 中显式初始化:惰性初始化依赖 context,compact 档下
+  // 字段可能到 dispose 才首次访问,届时查祖先树会抛异常
+  late final ValueNotifier<double> _tocWidth;
+  late final ValueNotifier<double> _explorerWidth;
 
   double _clampTocWidth(double width) => width.clamp(180.0, 480.0);
   double _clampExplorerWidth(double width) => width.clamp(200.0, 400.0);
+
+  @override
+  void initState() {
+    super.initState();
+    final storageService = context.read<StorageService>();
+    _tocWidth = ValueNotifier<double>(
+      _clampTocWidth(storageService.getTocPanelWidth()),
+    );
+    _explorerWidth = ValueNotifier<double>(
+      _clampExplorerWidth(storageService.getFileExplorerWidth()),
+    );
+    // 打开文件失败(文件仍在,如编码不支持)时经回调给出用户提示
+    _tabManager = context.read<TabManager>();
+    _tabManager!.onError = _showSnackBar;
+  }
 
   TocController? _tocControllerForActiveTab(TabManager tabManager) {
     final activeTab = tabManager.activeTab;
@@ -76,9 +90,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _tabManager?.onError = null;
     for (final controller in _tocControllers.values) {
       controller.dispose();
     }
+    _tocWidth.dispose();
+    _explorerWidth.dispose();
     super.dispose();
   }
 
@@ -133,7 +150,8 @@ class _HomeScreenState extends State<HomeScreen> {
         entries: buildQuickOpenEntries(
           tabs: tabManager.tabs,
           recentPaths: storageService.getRecentFiles(),
-          fileNameOf: (path) => path.split(Platform.pathSeparator).last,
+          // 统一走 FileService 的混合分隔符处理,与最近列表展示一致
+          fileNameOf: FileService.extractFileName,
         ),
         onSelected: (entry) {
           final path = entry.path;
@@ -351,7 +369,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     if (settings.showToc) {
                       settings.closeToc();
                     } else {
-                      Scaffold.of(ctx).openEndDrawer();
+                      // 先置位再打开:endDrawer 仅在 showToc 为真时挂载,
+                      // 直接 openEndDrawer 会因抽屉尚不存在而静默无效,
+                      // 目录在窄屏下将永远无法打开
+                      settings.toggleToc();
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (!ctx.mounted) return;
+                        Scaffold.of(ctx).openEndDrawer();
+                      });
                     }
                   },
                   tooltip: '文档目录',
@@ -390,17 +415,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   icon: Icon(
                     settings.showToc ? Icons.list_alt : Icons.list_alt_outlined,
                   ),
-                  onPressed: () {
-                    if (tier == WindowTier.compact) {
-                      if (settings.showToc) {
-                        settings.closeToc();
-                      } else {
-                        Scaffold.of(ctx).openEndDrawer();
-                      }
-                    } else {
-                      settings.toggleToc();
-                    }
-                  },
+                  // 本列表仅在 medium/expanded 档使用,目录为内嵌面板,
+                  // 直接切换即可(compact 档走上方抽屉逻辑)
+                  onPressed: settings.toggleToc,
                   tooltip: '文档目录',
                 ),
               ),
@@ -790,9 +807,8 @@ class _ContentAreaState extends State<_ContentArea> {
       data: widget.data,
       preprocessed: true,
       initialScrollOffset: activeTab.scrollOffset,
-      onScrollChanged: (offset) {
-        tabManager.updateScrollOffset(tabManager.activeIndex, offset);
-      },
+      onScrollChanged: (offset) =>
+          tabManager.updateScrollOffset(activeTab, offset),
       tocController: widget.tocController,
       filePath: activeTab.filePath,
       onLinkTap: widget.onLinkTap,

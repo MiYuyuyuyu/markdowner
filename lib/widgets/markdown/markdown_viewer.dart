@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/settings_provider.dart';
 import 'alert_support.dart';
+import 'br_support.dart';
 import 'code_block_support.dart';
 import 'image_support.dart';
 import 'latex_support.dart';
@@ -78,6 +79,11 @@ MarkdownConfig _buildMarkdownConfig({
     );
   }
 
+  // 代码块统一 monospace 并跟随阅读字号:markdown_widget 对未被高亮
+  // 规则命中的 token(标识符、数字等)取 styleNotMatched,不传则样式
+  // 为 null 继承环境默认字号,导致同一行内关键字大、普通文本小
+  final codeStyle = baseStyle.copyWith(fontFamily: 'monospace');
+
   return baseConfig.copy(
     configs: [
       PConfig(textStyle: baseStyle),
@@ -88,7 +94,8 @@ MarkdownConfig _buildMarkdownConfig({
       H5Config(style: headingStyle(16)),
       H6Config(style: headingStyle(16)),
       PreConfig(
-        textStyle: baseStyle,
+        textStyle: codeStyle,
+        styleNotMatched: codeStyle,
         wrapper: wrapCodeBlock,
       ),
       ImgConfig(
@@ -174,9 +181,7 @@ class _MarkdownViewerState extends State<MarkdownViewer> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _restoreInitialOffset();
-    });
+    _scheduleRestore();
   }
 
   @override
@@ -184,25 +189,46 @@ class _MarkdownViewerState extends State<MarkdownViewer> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.data != widget.data) {
       _initialOffsetRestored = false;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _restoreInitialOffset();
-      });
+      _scheduleRestore();
     }
   }
 
-  void _restoreInitialOffset() {
+  void _scheduleRestore() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _restoreInitialOffset();
+    });
+  }
+
+  /// 恢复阅读位置。正文列表是懒加载的,首帧的 maxScrollExtent 只是
+  /// 已构建内容的估计值,直接 clamp 会把目标偏移钳到一屏附近且不再
+  /// 校正(长文档恢复位置严重欠恢复);因此目标尚未可达时按帧重试,
+  /// 直到 maxScrollExtent 增长到位或重试耗尽(内容比记录的偏移短)。
+  void _restoreInitialOffset({int tries = 12}) {
     if (!mounted || _initialOffsetRestored || widget.initialScrollOffset <= 0) {
       return;
     }
     final position = _findScrollablePosition(_scrollHostKey.currentContext);
-    if (position == null || !position.hasPixels || position.maxScrollExtent <= 0) {
+    if (position == null || !position.hasPixels) {
+      _retryRestore(tries);
       return;
     }
-    _initialOffsetRestored = true;
-    position.jumpTo(widget.initialScrollOffset.clamp(
+    final target = widget.initialScrollOffset;
+    position.jumpTo(target.clamp(
       position.minScrollExtent,
       position.maxScrollExtent,
     ));
+    if (position.maxScrollExtent >= target || tries <= 0) {
+      _initialOffsetRestored = true;
+      return;
+    }
+    _retryRestore(tries);
+  }
+
+  void _retryRestore(int tries) {
+    if (tries <= 0) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _restoreInitialOffset(tries: tries - 1);
+    });
   }
 
   ScrollPosition? _findScrollablePosition(BuildContext? context) {
@@ -269,6 +295,7 @@ class _MarkdownViewerState extends State<MarkdownViewer> {
               LatexSyntax(),
               MermaidSyntax(),
               md.EmojiSyntax(),
+              BrSyntax(),
             ],
             blockSyntaxList: [const md.AlertBlockSyntax()],
             richTextBuilder: _buildMarkdownBlock,

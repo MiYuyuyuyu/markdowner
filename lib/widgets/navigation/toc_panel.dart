@@ -15,6 +15,12 @@ class HeadingItem {
 
 final _headingRegex = RegExp(r'^ {0,3}(#{1,6})\s+(.+)$');
 final _fenceOpenerRegex = RegExp(r'^ {0,3}(`{3,}|~{3,})');
+final _setextH1Regex = RegExp(r'^ {0,3}=+\s*$');
+final _setextH2Regex = RegExp(r'^ {0,3}-+\s*$');
+final _listMarkerRegex = RegExp(r'^ {0,3}(?:[-*+]|\d{1,9}[.)])(\s|$)');
+// 仅识别顶层列表项内的标题;更深嵌套的罕见写法暂不跟踪
+final _listHeadingRegex =
+    RegExp(r'^ {0,3}(?:[-*+]|\d{1,9}[.)])\s+(#{1,6})\s+(.+)$');
 
 String? _fenceOpenerOf(String line) {
   final match = _fenceOpenerRegex.firstMatch(line);
@@ -46,28 +52,99 @@ String _stripBlockquote(String line) {
   return content;
 }
 
+/// 解析文档标题,供目录/搜索跳转与 markdown_widget 的 TocController
+/// 列表按下标对应。除 ATX(`#`)外还识别:
+/// - setext 标题(`标题` 下一行 `===`/`---`),行号取段落首行;
+/// - 列表项内的 ATX 标题(`- # 标题`);
+/// - 引用块内的以上各形态。
+/// 注意:与渲染端(markdown 包)的解析保持一致的边界,如 `---` 紧跟
+/// 普通段落是 setext h2 而非分隔线、空行/列表行之后不是 setext。
 List<HeadingItem> parseHeadings(String markdown) {
   final headings = <HeadingItem>[];
   var lineIndex = 0;
   String? fenceOpener;
+  // setext 支持:跟踪当前普通段落(首行行号、累计文本、是否在引用块内)
+  int? paragraphStartLine;
+  bool paragraphInBlockquote = false;
+  final paragraphTitle = StringBuffer();
+
+  void resetParagraph() {
+    paragraphStartLine = null;
+    paragraphInBlockquote = false;
+    paragraphTitle.clear();
+  }
 
   for (final line in markdown.split('\n')) {
     if (fenceOpener != null) {
       if (_isFenceClose(line, fenceOpener)) fenceOpener = null;
-    } else {
-      final opener = _fenceOpenerOf(line);
-      if (opener != null) {
-        fenceOpener = opener;
-      } else {
-        final match = _headingRegex.firstMatch(_stripBlockquote(line));
-        if (match != null) {
-          headings.add(HeadingItem(
-            level: match.group(1)!.length,
-            title: match.group(2)!.trim(),
-            lineIndex: lineIndex,
-          ));
-        }
+      resetParagraph();
+      lineIndex++;
+      continue;
+    }
+
+    final opener = _fenceOpenerOf(line);
+    if (opener != null) {
+      fenceOpener = opener;
+      resetParagraph();
+      lineIndex++;
+      continue;
+    }
+
+    final inBlockquote = line.trimLeft().startsWith('>');
+    final stripped = _stripBlockquote(line);
+
+    // 引用块内外切换会打断段落(两侧不可能构成 setext)
+    if (paragraphStartLine != null &&
+        inBlockquote != paragraphInBlockquote) {
+      resetParagraph();
+    }
+
+    // setext 下划线:仅当紧跟同层级普通段落时成立,
+    // 否则是主题分隔线/普通段落内容
+    final paragraphStart = paragraphStartLine;
+    if (paragraphStart != null) {
+      final setextLevel = _setextH1Regex.hasMatch(stripped)
+          ? 1
+          : _setextH2Regex.hasMatch(stripped)
+              ? 2
+              : 0;
+      if (setextLevel > 0) {
+        headings.add(HeadingItem(
+          level: setextLevel,
+          title: paragraphTitle.toString(),
+          lineIndex: paragraphStart,
+        ));
+        resetParagraph();
+        lineIndex++;
+        continue;
       }
+    }
+
+    final atxMatch = _headingRegex.firstMatch(stripped);
+    final listMatch = atxMatch == null
+        ? _listHeadingRegex.firstMatch(stripped)
+        : null;
+    final headingMatch = atxMatch ?? listMatch;
+    if (headingMatch != null) {
+      headings.add(HeadingItem(
+        level: headingMatch.group(1)!.length,
+        title: headingMatch.group(2)!.trim(),
+        lineIndex: lineIndex,
+      ));
+      resetParagraph();
+      lineIndex++;
+      continue;
+    }
+
+    final trimmed = stripped.trim();
+    if (trimmed.isEmpty || _listMarkerRegex.hasMatch(stripped)) {
+      // 空行或列表行:不可能成为 setext 之前的段落内容
+      resetParagraph();
+    } else {
+      paragraphStartLine ??= lineIndex;
+      paragraphInBlockquote = inBlockquote;
+      if (paragraphTitle.isNotEmpty) paragraphTitle.write(' ');
+      paragraphTitle.write(trimmed);
     }
     lineIndex++;
   }

@@ -158,7 +158,9 @@ String? _normalizeLocalPath(String path, String? currentFilePath) {
 String _dirnameOf(String path) {
   final normalized = path.replaceAll('\\', '/');
   final index = normalized.lastIndexOf('/');
-  return index <= 0 ? normalized : normalized.substring(0, index);
+  if (index < 0) return ''; // 无目录前缀:相对解析基于空目录
+  if (index == 0) return '/'; // 根目录下的文件(如 /foo.md)
+  return normalized.substring(0, index);
 }
 
 /// GitHub 风格标题锚点 slug:小写、去标点(保留字母/数字/下划线)、

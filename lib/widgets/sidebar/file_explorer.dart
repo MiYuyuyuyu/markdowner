@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -104,12 +106,22 @@ class _FileExplorerState extends State<FileExplorer> {
           return value.clamp(min, effectiveMax);
         }
 
-        final treeHeight = safeClamp(totalHeight * _treeWeight, 80.0,
-            totalHeight - dividerSpace - 108.0);
-        final bottomHeight = totalHeight - treeHeight - dividerSpace;
-        final foldersHeight = safeClamp(
-            bottomHeight * _recentFoldersWeight, 60.0, bottomHeight - 66.0);
-        final filesHeight = bottomHeight - foldersHeight - 6.0;
+        // 极矮窗口(可用高度不足最小分区之和)时,分区高度若按原
+        // 公式计算会出现负值,SizedBox 负高度会触发布局断言;
+        // 因此各分区依次按剩余空间封顶并保证非负
+        final treeHeight = math.min(
+          safeClamp(totalHeight * _treeWeight, 80.0,
+              totalHeight - dividerSpace - 108.0),
+          math.max(0.0, totalHeight - dividerSpace),
+        );
+        final bottomHeight =
+            math.max(0.0, totalHeight - treeHeight - dividerSpace);
+        final foldersHeight = math.min(
+          safeClamp(
+              bottomHeight * _recentFoldersWeight, 60.0, bottomHeight - 66.0),
+          bottomHeight,
+        );
+        final filesHeight = math.max(0.0, bottomHeight - foldersHeight - 6.0);
 
         return Column(
           children: [
@@ -524,8 +536,10 @@ class _RecentFilesList extends StatelessWidget {
       itemBuilder: (context, index) {
         final path = paths[index];
         final fileName = FileService.extractFileName(path);
-        final dirPath =
-            path.substring(0, path.length - fileName.length - 1);
+        // 记录无目录前缀的异常情况时避免 substring 越界
+        final dirPath = path.length > fileName.length + 1
+            ? path.substring(0, path.length - fileName.length - 1)
+            : '';
         final colorScheme = Theme.of(context).colorScheme;
 
         return InkWell(

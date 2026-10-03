@@ -58,6 +58,46 @@ void main() {
       final headings = parseHeadings(data);
       expect(headings.map((h) => h.title), ['真标题']);
     });
+
+    test('recognizes setext headings with paragraph start line', () {
+      const data = '章节标题\n===\n正文\n\n小节标题\n---\n正文2';
+      final headings = parseHeadings(data);
+      expect(headings, hasLength(2));
+      expect(headings[0].level, 1);
+      expect(headings[0].lineIndex, 0);
+      expect(headings[1].level, 2);
+      expect(headings[1].lineIndex, 4);
+    });
+
+    test('multi-line paragraph under setext underline counts once', () {
+      const data = '第一行\n第二行\n===\n正文';
+      final headings = parseHeadings(data);
+      expect(headings, hasLength(1));
+      expect(headings.single.title, '第一行 第二行');
+      expect(headings.single.lineIndex, 0);
+    });
+
+    test('thematic break after blank line is not a setext heading', () {
+      const data = '# 标题\n\n正文\n\n---\n\n更多正文';
+      final headings = parseHeadings(data);
+      expect(headings.map((h) => h.title), ['标题']);
+    });
+
+    test('setext underline must stay in the same blockquote', () {
+      const data = '> 引用标题\n> ===\n\n正文\n> ---';
+      final headings = parseHeadings(data);
+      expect(headings, hasLength(1));
+      expect(headings.single.title, '引用标题');
+      expect(headings.single.lineIndex, 0);
+    });
+
+    test('recognizes headings inside top-level list items', () {
+      const data = '- # 列表标题\n- 普通项\n\n1. ## 有序列表标题';
+      final headings = parseHeadings(data);
+      expect(headings.map((h) => h.title), ['列表标题', '有序列表标题']);
+      expect(headings[0].level, 1);
+      expect(headings[1].level, 2);
+    });
   });
 
   group('FileService.extractFileName', () {
